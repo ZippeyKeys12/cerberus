@@ -125,6 +125,21 @@ let check_input_file filename =
     if not (ext ".c" || ext ".h") then
       CF.Pp_errors.fatal ("file \""^filename^"\" has wrong file extension")
 
+let _maybe_executable_check ~with_ownership_checking ~filename ?output_filename ?output_dir ail_prog mu_file statement_locs =
+  Option.iter (fun output_filename ->
+      Cerb_colour.without_colour (fun () ->
+          Executable_spec.main ~with_ownership_checking filename ail_prog output_dir output_filename mu_file statement_locs)
+        ())
+    output_filename
+
+let _maybe_generate_tests output_test_dir ail_prog prog5 =
+  Option.iter (fun output_dir ->
+    let (_, sigma) = ail_prog in
+    Cerb_colour.without_colour (fun () ->
+      TestGeneration.main output_dir sigma prog5)
+    ())
+    output_test_dir
+
 let main
       filename
       macros
@@ -162,6 +177,7 @@ let main
       batch
       no_inherit_loc
       magic_comment_char_dollar
+      _output_test_dir
   =
   if json then begin
       if debug_level > 0 then
@@ -399,9 +415,9 @@ let solver_type =
       & info ["solver-type"] ~docv:"z3|cvc5" ~doc
       )
 
-
-
-
+let output_test_dir =
+  let doc = "TODO: does nothing" in
+  Arg.(value & opt (some string) None & info ["output-test-dir"] ~docv:"FILE" ~doc)
 
 (* copied from cerberus' executable (backend/driver/main.ml) *)
 let macros =
@@ -466,7 +482,8 @@ let () =
       use_peval $
       batch $
       no_inherit_loc $
-      magic_comment_char_dollar
+      magic_comment_char_dollar $
+      output_test_dir
   in
   let version_str = "CN version: " ^ Cn_version.git_version in
   let cn_info = Cmd.info "cn" ~version:version_str in
