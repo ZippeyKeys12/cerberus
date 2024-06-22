@@ -125,6 +125,14 @@ let check_input_file filename =
     if not (ext ".c" || ext ".h") then
       CF.Pp_errors.fatal ("file \""^filename^"\" has wrong file extension")
 
+let maybe_generate_tests output_test_dir ail_prog prog5 =
+  Option.iter (fun output_dir ->
+    let (_, sigma) = ail_prog in
+    Cerb_colour.without_colour (fun () ->
+      TestGeneration.main output_dir sigma prog5)
+    ())
+    output_test_dir
+
 let main
       filename
       macros
@@ -162,6 +170,7 @@ let main
       batch
       no_inherit_loc
       magic_comment_char_dollar
+      output_test_dir
   =
   if json then begin
       if debug_level > 0 then
@@ -217,6 +226,7 @@ let main
       print_log_file ("mucore", MUCORE prog5);
       let paused = Typing.run_to_pause Context.empty (Check.check_decls_lemmata_fun_specs prog5) in
       Result.iter_error handle_error (Typing.pause_to_result paused);
+      maybe_generate_tests output_test_dir ail_prog prog5;
       begin match output_decorated with
       | None ->
         Typing.run_from_pause (fun paused -> Check.check paused lemmata) paused
@@ -399,7 +409,9 @@ let solver_type =
       & info ["solver-type"] ~docv:"z3|cvc5" ~doc
       )
 
-
+let output_test_dir =
+  let doc = "TODO: does nothing" in
+  Arg.(value & opt (some string) None & info ["output-test-dir"] ~docv:"FILE" ~doc)
 
 
 
@@ -466,7 +478,8 @@ let () =
       use_peval $
       batch $
       no_inherit_loc $
-      magic_comment_char_dollar
+      magic_comment_char_dollar $
+      output_test_dir
   in
   let version_str = "CN version: " ^ Cn_version.git_version in
   let cn_info = Cmd.info "cn" ~version:version_str in
