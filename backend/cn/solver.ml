@@ -1329,7 +1329,7 @@ module Eval = struct
          unsupported expr "quantifiers/lambdas"
 
       | () when Z3.Arithmetic.is_add expr ->
-         List.Old.fold_left (fun a b -> add_ (a, b) loc) (List.hd_exn args) (List.Old.tl args)
+         List.Old.fold_left (fun a b -> add_ (a, b) loc) (List.hd_exn args) (List.tl_exn args)
 
       | () when Z3.Boolean.is_and expr ->
          and_ args loc
