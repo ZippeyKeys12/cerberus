@@ -1501,7 +1501,7 @@ let cn_to_ail_function_internal (fn_sym, (lf_def : LogicalFunctions.definition))
   let param_types = List.map ~f:(fun t -> (empty_qualifiers, t, false)) param_types in
   let matched_cn_functions = List.Old.filter (fun (cn_fun : (A.ail_identifier, C.ctype) Cn.cn_function) -> String.equal (Sym.pp_string cn_fun.cn_func_name) (Sym.pp_string fn_sym)) cn_functions in
   (* Unsafe - check if list has an element *)
-  let loc = (List.Old.nth matched_cn_functions 0).cn_func_magic_loc in 
+  let loc = (List.nth_exn matched_cn_functions 0).cn_func_magic_loc in 
   (* Generating function declaration *)
   let decl = (fn_sym, (lf_def.loc, empty_attributes, A.(Decl_function (false, (empty_qualifiers, ret_type), param_types, false, false, false)))) in
   (* Generating function definition *)
@@ -1590,7 +1590,7 @@ let cn_to_ail_predicate_internal (pred_sym, (rp_def : ResourcePredicates.definit
 
   let matched_cn_preds = List.Old.filter (fun (cn_pred : (A.ail_identifier, C.ctype) Cn.cn_predicate) -> String.equal (Sym.pp_string cn_pred.cn_pred_name) (Sym.pp_string pred_sym)) cn_preds in
   (* Unsafe - check if list has an element *)
-  let loc = (List.Old.nth matched_cn_preds 0).cn_pred_magic_loc in 
+  let loc = (List.nth_exn matched_cn_preds 0).cn_pred_magic_loc in 
   (((loc, decl), def), ail_record_opt, ownership_ctypes')
 
 let rec cn_to_ail_predicates_internal pred_def_list dts globals ots preds cn_preds = 
