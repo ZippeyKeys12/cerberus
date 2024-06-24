@@ -371,7 +371,7 @@ let in_stmt_injs xs num_headers =
           start_pos= Pos.increment_line start_pos num_headers;
           end_pos= Pos.v (end_pos.line + num_headers) end_pos.col;
       }
-      ; kind= InStmt (List.Old.length strs, String.concat "\n" strs) }
+      ; kind= InStmt (List.length strs, String.concat "\n" strs) }
   )
   xs
   (* (List.Old.filter (fun (loc, _) -> Cerb_location.from_main_file loc) xs) *)

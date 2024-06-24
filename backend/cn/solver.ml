@@ -1304,7 +1304,7 @@ module Eval = struct
     (* informed by this: https://stackoverflow.com/questions/22885457/read-func-interp-of-a-z3-array-from-the-z3-model/22918197 *)
     let rec func_interp func_decl =
       let domain = Z3.FuncDecl.get_domain func_decl in
-      assert (List.Old.length domain = 1);
+      assert (List.length domain = 1);
       let argument_sort = List.Old.hd domain in
       let func_interp = Option.get (Z3.Model.get_func_interp model func_decl) in
       let base_value = z3_expr (Z3.Model.FuncInterp.get_else func_interp) in
@@ -1312,7 +1312,7 @@ module Eval = struct
       let loc = Locations.other __FUNCTION__ in
       List.Old.fold_right (fun entry map_value ->
           let entry_args = Z3.Model.FuncInterp.FuncEntry.get_args entry in
-          assert (List.Old.length entry_args = 1);
+          assert (List.length entry_args = 1);
           let index = List.Old.hd entry_args in
           let value = z3_expr (Z3.Model.FuncInterp.FuncEntry.get_value entry) in
           map_set_ map_value (z3_expr index, value) loc
@@ -1522,14 +1522,14 @@ module Eval = struct
            unit_ loc
 
         (* TODO: this looks incorrect: nm will not be bound in the typing context *)
-        | () when is_uninterp_bt expr_bt && List.Old.length args == 0 ->
+        | () when is_uninterp_bt expr_bt && List.length args == 0 ->
            (* Z3 creates unspecified consts within uninterpreted types - map to vars *)
            let nm = Sym.fresh_named (Z3.Symbol.to_string func_name) in
            Z3Symbol_Table.add z3sym_table func_name (UninterpretedVal {nm});
            sym_ (nm, expr_bt, loc)
 
         | () when Option.is_some (Z3.Model.get_func_interp model func_decl) ->
-           assert (List.Old.length args = 1);
+           assert (List.length args = 1);
            map_get_ (func_interp func_decl) (List.Old.hd args) loc
 
         | () ->

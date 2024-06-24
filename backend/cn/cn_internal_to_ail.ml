@@ -75,8 +75,8 @@ end
 
 
 let members_equal ms ms' = 
-  if ((List.Old.length ms) != (List.Old.length ms')) then false else
-  (if (List.Old.length ms == 0) then true else (
+  if ((List.length ms) != (List.length ms')) then false else
+  (if (List.length ms == 0) then true else (
   let (ids, cn_bts) = List.Old.split ms in
   let (ids', cn_bts') = List.Old.split ms' in
   let ctypes_eq = List.Old.map2 (fun cn_bt cn_bt'->
@@ -190,7 +190,7 @@ let generate_record_sym sym members =
       sym''
     | None ->   
       let map_bindings = RecordMap.bindings !records in
-      (* Printf.printf "Record table size: %d\n" (List.Old.length map_bindings); *)
+      (* Printf.printf "Record table size: %d\n" (List.length map_bindings); *)
       let eq_members_bindings = List.Old.filter (fun (k, v) -> members_equal k members) map_bindings in
       match eq_members_bindings with 
       | [] -> 
@@ -779,7 +779,7 @@ let rec cn_to_ail_expr_aux_internal
         | [] -> failwith "Datatype not found" (* Not found *)
         | dt :: dts' ->
           let matching_cases = List.Old.filter (fun (c_sym, members) -> String.equal (Sym.pp_string c_sym) (Sym.pp_string constr_sym)) dt.cn_dt_cases in
-          if List.Old.length matching_cases != 0 then
+          if List.length matching_cases != 0 then
             let (_, members) = List.Old.hd matching_cases in
             (dt, members)
           else 
