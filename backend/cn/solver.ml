@@ -929,7 +929,7 @@ module Translate = struct
                (* print stdout (item "pat" (pp_pattern pat)); *)
                (* print stdout (item "body" (IT.pp body)); *)
                let (cond, substs) = translate_case matched pat in
-               let froms, tos = List.Old.split substs in
+               let froms, tos = List.unzip substs in
                let body = Z3.Expr.substitute (term body) froms tos in
                (cond, body)
              ) cases
@@ -969,7 +969,7 @@ module Translate = struct
                  translate_case member apat
                ) args
            in
-           let args_conds, args_substs = List.Old.split args_conds_substs in
+           let args_conds, args_substs = List.unzip args_conds_substs in
            (Z3.Boolean.mk_and context (m1 :: args_conds), List.concat args_substs)
        | Pat (PSym s, pbt, loc) ->
           let subst = (term (IT.sym_ (s, pbt, loc)), matched) in
