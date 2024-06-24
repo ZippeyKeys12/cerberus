@@ -962,7 +962,7 @@ module Translate = struct
            let m1 = datatypeIsCons (c_nm, matched) in
            let constr_info = SymMap.find c_nm global.datatype_constrs in
            let dt_tag = constr_info.c_datatype_tag in
-           assert (List.Old.for_all2 (fun (id,_) (id',_) -> Id.equal id id') constr_info.c_params args);
+           assert (List.for_all2_exn ~f:(fun (id,_) (id',_) -> Id.equal id id') constr_info.c_params args);
            let args_conds_substs =
              List.map ~f:(fun (id, (Pat (_, abt, _) as apat)) ->
                  let member = datatypeMember ((matched, Datatype dt_tag), (id,abt)) in
@@ -990,7 +990,7 @@ module Translate = struct
         (* ensure datatype added first *)
         let constr_info = SymMap.find c_nm global.datatype_constrs in
         let dt_sort = sort (Datatype constr_info.c_datatype_tag) in
-        assert (List.Old.for_all2 (fun (id,_) (id',_) -> Id.equal id id') constr_info.c_params args);
+        assert (List.for_all2_exn ~f:(fun (id,_) (id',_) -> Id.equal id id') constr_info.c_params args);
         let args = List.map ~f:(fun (_id, t) -> term t) args in
         apply_matching_func (DatatypeConsFunc {nm = c_nm})
           (Z3.Datatype.get_constructors dt_sort) args
