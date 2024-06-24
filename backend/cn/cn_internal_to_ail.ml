@@ -639,7 +639,7 @@ let rec cn_to_ail_expr_aux_internal
                   (match rm_ctype ctype with 
                     | C.(Pointer (_, Ctype (_, Struct sym))) -> 
                       let dt_names = List.map ~f:(fun dt -> Sym.pp_string dt.cn_dt_name) dts in 
-                      (* List.Old.iter (fun dt_str -> Printf.printf "%s\n" dt_str) dt_names; *)
+                      (* List.iter ~f:(fun dt_str -> Printf.printf "%s\n" dt_str) dt_names; *)
                       let _is_datatype = List.Old.mem String.equal (Sym.pp_string sym) dt_names in
                       (* let prefix = if is_datatype then "datatype_" else "struct_" in *)
                       let prefix = "struct_" in

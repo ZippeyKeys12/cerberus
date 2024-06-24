@@ -393,7 +393,7 @@ module Translate = struct
         let is_sym = dt_recog_name context nm in
         Z3Symbol_Table.add z3sym_table sym (DatatypeConsFunc {nm});
         (* Z3Symbol_Table.add z3sym_table is_sym (DatatypeConsRecogFunc {nm}); *)
-        List.Old.iter (fun (member, bt) -> Z3Symbol_Table.add z3sym_table
+        List.iter ~f:(fun (member, bt) -> Z3Symbol_Table.add z3sym_table
             (string context (accessor_name dt_nm member)) (DatatypeAccFunc {member; dt = dt_nm; bt})) info.c_params;
         Z3.Datatype.mk_constructor context sym is_sym
             (List.map ~f:(fun (member, _) -> string context (accessor_name dt_nm member)) info.c_params)
@@ -414,7 +414,7 @@ module Translate = struct
     in
 
 
-    List.Old.iter translate_group (Option.get global.datatype_order)
+    List.iter ~f:translate_group (Option.get global.datatype_order)
 
 
 
@@ -1116,7 +1116,7 @@ let _add_simplifiers context solver =
 
 let make global : solver =
   Z3.Memory.reset ();
-  List.Old.iter (fun (c,v) -> Z3.set_global_param c v) (params ());
+  List.iter ~f:(fun (c,v) -> Z3.set_global_param c v) (params ());
   Pp.debug 4 (lazy (Pp.item "Setting up Z3 with params"
     (flow_map (!^ " ") (fun (s, v) -> !^ s ^^ !^ "=" ^^ !^ v) (params ()))));
   let context = Z3.mk_context [] in
@@ -1239,7 +1239,7 @@ let provable ~loc ~solver ~global ~assumptions ~simp_ctxt ~pointer_facts lc =
      | Z3.Solver.UNKNOWN ->
         let () = Z3.Solver.reset solver.non_incremental in
         let () =
-          List.Old.iter (fun lc ->
+          List.iter ~f:(fun lc ->
             Z3.Solver.add solver.non_incremental [lc]
             ) (nlc :: extra @ existing_scs)
         in
