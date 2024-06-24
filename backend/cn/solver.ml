@@ -321,7 +321,7 @@ module Translate = struct
          let bt_symbol = string (bt_name (Tuple bts)) in
          Z3Symbol_Table.add z3sym_table bt_symbol (TupleFunc {bts});
          let field_symbols =
-           List.Old.mapi (fun i _ ->
+           List.mapi ~f:(fun i _ ->
                let sym = string (tuple_field_name bts i) in
                Z3Symbol_Table.add z3sym_table sym (CompFunc {bts; i});
                sym
@@ -374,7 +374,7 @@ module Translate = struct
   let translate_datatypes context global =
 
     let translate_group to_translate =
-      let to_translate = List.Old.mapi (fun i nm -> (nm, i)) to_translate in
+      let to_translate = List.mapi ~f:(fun i nm -> (nm, i)) to_translate in
       let arg_sort bt = match bt with
         | BT.Datatype nm -> begin match BT_Table.find_opt bt_table bt with
             | Some sort -> (Some sort, 0)
@@ -814,7 +814,7 @@ module Translate = struct
          Z3.Expr.mk_app context constructor (List.map ~f:(fun (_, t) -> term t) mts)
       | RecordMember (t, member) ->
          let members = BT.record_bt (IT.bt t) in
-         let members_i = List.Old.mapi (fun i (m, _) -> (m, i)) members in
+         let members_i = List.mapi ~f:(fun i (m, _) -> (m, i)) members in
          let n = List.Old.assoc Id.equal member members_i in
          let destructors = Z3.Tuple.get_field_decls (sort (IT.bt t)) in
          Z3.Expr.mk_app context (List.nth_exn destructors n) [term t]
