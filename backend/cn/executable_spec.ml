@@ -1,7 +1,7 @@
 let rec group_toplevel_defs new_list = function
   | [] -> new_list
   | (loc, strs) :: xs ->
-      let matching_elems = List.Old.filter (fun (toplevel_loc, _) ->
+      let matching_elems = List.filter ~f:(fun (toplevel_loc, _) ->
         loc == toplevel_loc
       ) new_list in
       if List.Old.is_empty matching_elems then
@@ -9,7 +9,7 @@ let rec group_toplevel_defs new_list = function
       else
         (* Unsafe *)
         let (_, toplevel_strs) = List.nth_exn matching_elems 0 in
-        let non_matching_elems = List.Old.filter (fun (toplevel_loc, _) ->
+        let non_matching_elems = List.filter ~f:(fun (toplevel_loc, _) ->
           loc != toplevel_loc
         ) new_list in
         group_toplevel_defs ((loc, toplevel_strs @ strs) :: non_matching_elems) xs
@@ -96,7 +96,7 @@ let main ?(with_ownership_checking=false) filename ((_, sigm) as ail_prog) outpu
   let struct_injs_with_filenames = Executable_spec_internal.generate_struct_injs sigm in
 
   let filter_injs_by_filename struct_inj_pairs fn =
-    List.Old.filter (fun (loc, _inj) -> match Cerb_location.get_filename loc with | Some name -> (String.equal name fn) | None -> false) struct_inj_pairs
+    List.filter ~f:(fun (loc, _inj) -> match Cerb_location.get_filename loc with | Some name -> (String.equal name fn) | None -> false) struct_inj_pairs
   in
   let source_file_struct_injs_with_syms = filter_injs_by_filename struct_injs_with_filenames filename in
   let source_file_struct_injs = List.map ~f:(fun (loc, (_sym, strs)) -> (loc, strs)) source_file_struct_injs_with_syms in

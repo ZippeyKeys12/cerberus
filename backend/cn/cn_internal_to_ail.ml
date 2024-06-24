@@ -191,7 +191,7 @@ let generate_record_sym sym members =
     | None ->   
       let map_bindings = RecordMap.bindings !records in
       (* Printf.printf "Record table size: %d\n" (List.length map_bindings); *)
-      let eq_members_bindings = List.Old.filter (fun (k, v) -> members_equal k members) map_bindings in
+      let eq_members_bindings = List.filter ~f:(fun (k, v) -> members_equal k members) map_bindings in
       match eq_members_bindings with 
       | [] -> 
         (* First time reaching record of this type - add to map *)
@@ -584,7 +584,7 @@ let rec cn_to_ail_expr_aux_internal
       in
       
       (* Check globals *)
-      let global_match = List.Old.filter (fun (global_sym, _) -> String.equal (Sym.pp_string sym) (Sym.pp_string global_sym)) globals in
+      let global_match = List.filter ~f:(fun (global_sym, _) -> String.equal (Sym.pp_string sym) (Sym.pp_string global_sym)) globals in
 
       let ail_expr_ = match global_match with 
         | [] -> ail_expr_
@@ -778,7 +778,7 @@ let rec cn_to_ail_expr_aux_internal
       match dts with 
         | [] -> failwith "Datatype not found" (* Not found *)
         | dt :: dts' ->
-          let matching_cases = List.Old.filter (fun (c_sym, members) -> String.equal (Sym.pp_string c_sym) (Sym.pp_string constr_sym)) dt.cn_dt_cases in
+          let matching_cases = List.filter ~f:(fun (c_sym, members) -> String.equal (Sym.pp_string c_sym) (Sym.pp_string constr_sym)) dt.cn_dt_cases in
           if List.length matching_cases != 0 then
             let (_, members) = List.Old.hd matching_cases in
             (dt, members)
@@ -961,7 +961,7 @@ let rec cn_to_ail_expr_aux_internal
               else
                 match IT.bt term with
                   | BT.Datatype sym -> 
-                      let cn_dt = List.Old.filter (fun dt -> String.equal (Sym.pp_string sym) (Sym.pp_string dt.cn_dt_name)) dts in 
+                      let cn_dt = List.filter ~f:(fun dt -> String.equal (Sym.pp_string sym) (Sym.pp_string dt.cn_dt_name)) dts in 
                       (match cn_dt with 
                         | [] -> failwith "Datatype not found"
                         | dt :: _ ->
@@ -1276,7 +1276,7 @@ let cn_to_ail_resource_internal sym dts globals (preds : Mucore.T.resource_predi
   let calculate_return_type = function 
   | ResourceTypes.Owned (sct, _) -> (Sctypes.to_ctype sct, BT.of_sct Memory.is_signed_integer_type Memory.size_of_integer_type sct)
   | PName pname -> 
-    let matching_preds = List.Old.filter (fun (pred_sym', def) -> String.equal (Sym.pp_string pname) (Sym.pp_string pred_sym')) preds in
+    let matching_preds = List.filter ~f:(fun (pred_sym', def) -> String.equal (Sym.pp_string pname) (Sym.pp_string pred_sym')) preds in
     let (pred_sym', pred_def') = match matching_preds with 
       | [] -> failwith "Predicate not found"
       | p :: _ -> p
@@ -1499,7 +1499,7 @@ let cn_to_ail_function_internal (fn_sym, (lf_def : LogicalFunctions.definition))
   let params = params @ [(error_msg_info_sym, C.mk_ctype_pointer empty_qualifiers error_msg_info_ctype)] in
   let (param_syms, param_types) = List.Old.split params in
   let param_types = List.map ~f:(fun t -> (empty_qualifiers, t, false)) param_types in
-  let matched_cn_functions = List.Old.filter (fun (cn_fun : (A.ail_identifier, C.ctype) Cn.cn_function) -> String.equal (Sym.pp_string cn_fun.cn_func_name) (Sym.pp_string fn_sym)) cn_functions in
+  let matched_cn_functions = List.filter ~f:(fun (cn_fun : (A.ail_identifier, C.ctype) Cn.cn_function) -> String.equal (Sym.pp_string cn_fun.cn_func_name) (Sym.pp_string fn_sym)) cn_functions in
   (* Unsafe - check if list has an element *)
   let loc = (List.nth_exn matched_cn_functions 0).cn_func_magic_loc in 
   (* Generating function declaration *)
@@ -1588,7 +1588,7 @@ let cn_to_ail_predicate_internal (pred_sym, (rp_def : ResourcePredicates.definit
   (* Generating function definition *)
   let def = (pred_sym, (rp_def.loc, 0, empty_attributes, param_syms, mk_stmt A.(AilSblock (bs, pred_body)))) in
 
-  let matched_cn_preds = List.Old.filter (fun (cn_pred : (A.ail_identifier, C.ctype) Cn.cn_predicate) -> String.equal (Sym.pp_string cn_pred.cn_pred_name) (Sym.pp_string pred_sym)) cn_preds in
+  let matched_cn_preds = List.filter ~f:(fun (cn_pred : (A.ail_identifier, C.ctype) Cn.cn_predicate) -> String.equal (Sym.pp_string cn_pred.cn_pred_name) (Sym.pp_string pred_sym)) cn_preds in
   (* Unsafe - check if list has an element *)
   let loc = (List.nth_exn matched_cn_preds 0).cn_pred_magic_loc in 
   (((loc, decl), def), ail_record_opt, ownership_ctypes')

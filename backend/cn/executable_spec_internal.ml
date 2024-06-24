@@ -25,7 +25,7 @@ let generate_ail_stat_strs (bs, (ail_stats_ : CF.GenTypes.genTypeCategory A.stat
     | _ -> false
   in
 
-  let ail_stats_ = List.Old.filter (fun s -> not (is_assert_true s)) ail_stats_ in
+  let ail_stats_ = List.filter ~f:(fun s -> not (is_assert_true s)) ail_stats_ in
   let doc = List.map ~f:(fun s -> CF.Pp_ail.pp_statement ~executable_spec:true ~bs (mk_stmt s)) ail_stats_ in
   let doc = List.map ~f:(fun d -> d ^^ PPrint.hardline) doc in
   List.map ~f:CF.Pp_utils.to_plain_pretty_string doc
@@ -192,9 +192,9 @@ let bt_is_record_or_tuple = function
   | _ -> false
 
 let fns_and_preds_with_record_rt (funs, preds) =
-  let funs' = List.Old.filter (fun (_, (def : LogicalFunctions.definition)) -> bt_is_record_or_tuple def.return_bt) funs in
+  let funs' = List.filter ~f:(fun (_, (def : LogicalFunctions.definition)) -> bt_is_record_or_tuple def.return_bt) funs in
   let fun_syms = List.map ~f:(fun (fn_sym, _) -> fn_sym) funs' in
-  let preds' = List.Old.filter (fun (_, (def : ResourcePredicates.definition)) -> bt_is_record_or_tuple def.oarg_bt) preds in
+  let preds' = List.filter ~f:(fun (_, (def : ResourcePredicates.definition)) -> bt_is_record_or_tuple def.oarg_bt) preds in
   let pred_syms = List.map ~f:(fun (pred_sym, _) -> pred_sym) preds' in
   (fun_syms, pred_syms)
 
@@ -284,7 +284,7 @@ let generate_ownership_globals ?(is_extern=false) () =
   CF.Pp_utils.to_plain_pretty_string doc
 
 let generate_ownership_global_assignments (sigm : CF.GenTypes.genTypeCategory CF.AilSyntax.sigma) = 
-  let main_fn_sym_list = List.Old.filter (fun (fn_sym, _) -> String.equal "main" (Sym.pp_string fn_sym)) sigm.function_definitions in 
+  let main_fn_sym_list = List.filter ~f:(fun (fn_sym, _) -> String.equal "main" (Sym.pp_string fn_sym)) sigm.function_definitions in 
   match main_fn_sym_list with 
     | [] -> failwith "CN-exec: No main function so ownership globals cannot be initialised"
     | (main_sym, _) :: _ ->
