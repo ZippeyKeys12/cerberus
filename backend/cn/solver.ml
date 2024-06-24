@@ -1057,7 +1057,7 @@ module Translate = struct
 
   let extra_assumptions assumptions qs =
     let loc = Locations.other __FUNCTION__ in
-    List.Old.concat_map (fun (s, bt) ->
+    List.concat_map ~f:(fun (s, bt) ->
         let v = sym_ (s, bt, loc) in
         LCSet.fold (fun lc acc ->
             match lc with
