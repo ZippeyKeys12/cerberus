@@ -1009,7 +1009,7 @@ module Translate = struct
         let recogs = Z3.Datatype.get_recognizers dt_sort in
         (* something's funny with these recognizers. assume in same order as constructors *)
         let info = SymMap.find dt_tag global.datatypes in
-        let assocs = List.Old.map2 (fun c_nm fd -> (c_nm, fd)) info.dt_constrs recogs in
+        let assocs = List.map2_exn ~f:(fun c_nm fd -> (c_nm, fd)) info.dt_constrs recogs in
         let fd = List.Old.assoc Sym.equal c_nm assocs in
         Z3.FuncDecl.apply fd [t]
 
