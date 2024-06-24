@@ -225,7 +225,7 @@ open Cmdliner
 
 
 (* some of these stolen from backend/driver *)
-module Common = struct
+module Common_flags = struct
 let file =
   let doc = "Source C file" in
   Arg.(required & pos ~rev:true 0 (some string) None & info [] ~docv:"FILE" ~doc)
@@ -281,10 +281,6 @@ let no_timestamps =
   let doc = "Disable timestamps in print-level debug messages" in
   Arg.(value & flag & info ["no_timestamps"] ~doc)
 
-let json =
-  let doc = "output in json format" in
-  Arg.(value & flag & info["json"] ~doc)
-
 (* copy-pasting from backend/driver/main.ml *)
 let astprints =
   let doc = "Pretty print the intermediate syntax tree for the listed languages \
@@ -297,10 +293,6 @@ let no_use_ity =
   integer type annotations placed by the Core elaboration" in
   Arg.(value & flag & info["no-use-ity"] ~doc)
 
-let use_peval =
-  let doc = "(this switch should go away) run the Core partial evaluation phase" in
-  Arg.(value & flag & info["use-peval"] ~doc)
-
 let no_inherit_loc =
   let doc = "debugging: stop mucore terms inheriting location information from parents" in
   Arg.(value & flag & info["no-inherit-loc"] ~doc)
@@ -311,7 +303,7 @@ let magic_comment_char_dollar =
 
 end
 
-module Verify = struct
+module Verify_flags = struct
 let loc_pp =
   let doc = "Print pointer values as hexadecimal or as decimal values (hex | dec)" in
   Arg.(value & opt (enum ["hex", Pp.Hex; "dec", Pp.Dec]) !Pp.loc_pp &
@@ -366,9 +358,17 @@ let use_vip =
   let doc = "use experimental VIP rules" in
   Arg.(value & flag & info["vip"] ~doc)
 
+let use_peval =
+  let doc = "(this switch should go away) run the Core partial evaluation phase" in
+  Arg.(value & flag & info["use-peval"] ~doc)
+
+let json =
+  let doc = "output in json format" in
+  Arg.(value & flag & info["json"] ~doc)
+
 end
 
-module Reify = struct
+module Executable_spec_flags = struct
 let output_decorated_dir =
   let doc = "output a version of the translation unit decorated with C runtime
   translations of the CN annotations to the provided directory" in
@@ -397,37 +397,37 @@ let () =
   let open Term in
   let check_t =
     const main $
-      Common.file $
-      Common.macros $
-      Common.incl_dirs $
-      Common.incl_files $
-      Verify.loc_pp $
-      Common.debug_level $
-      Common.print_level $
-      Common.print_sym_nums $
-      Verify.slow_smt_threshold $
-      Verify.slow_smt_dir $
-      Common.no_timestamps $
-      Common.json $
-      Verify.state_file $
-      Verify.diag $
+      Common_flags.file $
+      Common_flags.macros $
+      Common_flags.incl_dirs $
+      Common_flags.incl_files $
+      Verify_flags.loc_pp $
+      Common_flags.debug_level $
+      Common_flags.print_level $
+      Common_flags.print_sym_nums $
+      Verify_flags.slow_smt_threshold $
+      Verify_flags.slow_smt_dir $
+      Common_flags.no_timestamps $
+      Verify_flags.json $
+      Verify_flags.state_file $
+      Verify_flags.diag $
       Lemma.lemmata $
-      Verify.only $
-      Verify.skip $
-      Verify.csv_times $
-      Verify.log_times $
-      Verify.random_seed $
-      Verify.solver_logging $
-      Reify.output_decorated_dir $
-      Reify.output_decorated $
-      Reify.with_ownership_checking $
-      Common.astprints $
-      Verify.use_vip $
-      Common.no_use_ity $
-      Common.use_peval $
-      Verify.batch $
-      Common.no_inherit_loc $
-      Common.magic_comment_char_dollar
+      Verify_flags.only $
+      Verify_flags.skip $
+      Verify_flags.csv_times $
+      Verify_flags.log_times $
+      Verify_flags.random_seed $
+      Verify_flags.solver_logging $
+      Executable_spec_flags.output_decorated_dir $
+      Executable_spec_flags.output_decorated $
+      Executable_spec_flags.with_ownership_checking $
+      Common_flags.astprints $
+      Verify_flags.use_vip $
+      Common_flags.no_use_ity $
+      Verify_flags.use_peval $
+      Verify_flags.batch $
+      Common_flags.no_inherit_loc $
+      Common_flags.magic_comment_char_dollar
   in
   Stdlib.exit @@ Cmd.(eval (v (info "cn") check_t))
 
