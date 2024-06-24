@@ -327,7 +327,7 @@ module Translate = struct
                sym
              ) bts
          in
-         let sorts = List.Old.map sort bts in
+         let sorts = List.map ~f:sort bts in
          Z3.Tuple.mk_sort context bt_symbol field_symbols sorts
       | Struct tag ->
          let struct_symbol = string (bt_name (Struct tag)) in
@@ -348,13 +348,13 @@ module Translate = struct
          let bt_symbol = string (bt_name (Record members)) in
          Z3Symbol_Table.add z3sym_table bt_symbol (RecordFunc {mbts=members});
          let member_symbols =
-           List.Old.map (fun (member, _bt) ->
+           List.map ~f:(fun (member, _bt) ->
                let sym = string (record_member_name members member) in
                Z3Symbol_Table.add z3sym_table sym (RecordMemberFunc {mbts=members; member});
                sym
              ) members
          in
-         let member_sorts = List.Old.map (fun (_, bt) -> sort bt) members in
+         let member_sorts = List.map ~f:(fun (_, bt) -> sort bt) members in
          Z3.Tuple.mk_sort context bt_symbol
            member_symbols member_sorts
 
@@ -388,7 +388,7 @@ module Translate = struct
       in
       let conv_cons dt_nm nm =
         let info = SymMap.find nm global.datatype_constrs in
-        let r = List.Old.map (fun (_, bt) -> arg_sort bt) info.c_params in
+        let r = List.map ~f:(fun (_, bt) -> arg_sort bt) info.c_params in
         let sym = symbol context nm in
         let is_sym = dt_recog_name context nm in
         Z3Symbol_Table.add z3sym_table sym (DatatypeConsFunc {nm});
@@ -396,16 +396,16 @@ module Translate = struct
         List.Old.iter (fun (member, bt) -> Z3Symbol_Table.add z3sym_table
             (string context (accessor_name dt_nm member)) (DatatypeAccFunc {member; dt = dt_nm; bt})) info.c_params;
         Z3.Datatype.mk_constructor context sym is_sym
-            (List.Old.map (fun (member, _) -> string context (accessor_name dt_nm member)) info.c_params)
-            (List.Old.map fst r) (List.Old.map snd r)
+            (List.map ~f:(fun (member, _) -> string context (accessor_name dt_nm member)) info.c_params)
+            (List.map ~f:fst r) (List.map ~f:snd r)
       in
       let conv_dt nm =
         let info = SymMap.find nm global.datatypes in
-        List.Old.map (conv_cons nm) info.dt_constrs
+        List.map ~f:(conv_cons nm) info.dt_constrs
       in
       let sorts = Z3.Datatype.mk_sorts context
-          (List.Old.map (fun (nm, _) -> symbol context nm) to_translate)
-          (List.Old.map (fun (nm, _) -> conv_dt nm) to_translate)
+          (List.map ~f:(fun (nm, _) -> symbol context nm) to_translate)
+          (List.map ~f:(fun (nm, _) -> conv_dt nm) to_translate)
       in
       List.Old.iter2 (fun (nm, _) sort -> begin
               BT_Table.add bt_table (BT.Datatype nm) sort;
@@ -523,7 +523,7 @@ module Translate = struct
          let layout = SymMap.find (struct_bt (IT.bt t)) struct_decls in
          let members = Memory.member_types layout in
          let str =
-           List.Old.map (fun (member', sct) ->
+           List.map ~f:(fun (member', sct) ->
                let value =
                  if Id.equal member member' then v
                  else member_ ~member_bt:(Memory.bt_of_sct sct) (t, member') here
@@ -535,7 +535,7 @@ module Translate = struct
       | RecordUpdate ((t, member), v) ->
          let members = BT.record_bt (IT.bt t) in
          let str =
-           List.Old.map (fun (member', bt) ->
+           List.map ~f:(fun (member', bt) ->
                let value =
                  if Id.equal member member' then v
                  else IT ((RecordMember (t, member')), bt, here)
@@ -782,27 +782,27 @@ module Translate = struct
                      context (term t1) (term t2)
          | EQ -> Z3.Boolean.mk_eq context (term t1) (term t2)
          | SetMember -> Z3.Set.mk_membership context (term t1) (term t2)
-         | SetUnion -> Z3.Set.mk_union context (List.Old.map term [t1;t2])
-         | SetIntersection -> Z3.Set.mk_intersection context (List.Old.map term [t1;t2])
+         | SetUnion -> Z3.Set.mk_union context (List.map ~f:term [t1;t2])
+         | SetIntersection -> Z3.Set.mk_intersection context (List.map ~f:term [t1;t2])
          | SetDifference -> Z3.Set.mk_difference context (term t1) (term t2)
          | Subset -> Z3.Set.mk_subset context (term t1) (term t2)
          | LTPointer -> adj ()
          | LEPointer -> adj ()
-         | And -> Z3.Boolean.mk_and context (List.Old.map term [t1;t2])
-         | Or -> Z3.Boolean.mk_or context (List.Old.map term [t1;t2])
+         | And -> Z3.Boolean.mk_and context (List.map ~f:term [t1;t2])
+         | Or -> Z3.Boolean.mk_or context (List.map ~f:term [t1;t2])
          | Impl -> Z3.Boolean.mk_implies context (term t1) (term t2)
          end
       | ITE (t1, t2, t3) -> Z3.Boolean.mk_ite context (term t1) (term t2) (term t3)
       | EachI _ -> adj ()
       | Tuple ts ->
          let constructor = Z3.Tuple.get_mk_decl (sort bt) in
-         Z3.Expr.mk_app context constructor (List.Old.map term ts)
+         Z3.Expr.mk_app context constructor (List.map ~f:term ts)
       | NthTuple (n, t) ->
          let destructors = Z3.Tuple.get_field_decls (sort (IT.bt t)) in
          Z3.Expr.mk_app context (List.Old.nth destructors n) [term t]
       | Struct (_tag, mts) ->
          let constructor = Z3.Tuple.get_mk_decl (sort bt) in
-         Z3.Expr.mk_app context constructor (List.Old.map (fun (_, t) -> term t) mts)
+         Z3.Expr.mk_app context constructor (List.map ~f:(fun (_, t) -> term t) mts)
       | StructMember (t, member) ->
          let layout = SymMap.find (struct_bt (IT.bt t)) struct_decls in
          let n = Option.get (Memory.member_number layout member) in
@@ -811,7 +811,7 @@ module Translate = struct
       | StructUpdate _ -> adj ()
       | Record mts ->
          let constructor = Z3.Tuple.get_mk_decl (sort bt) in
-         Z3.Expr.mk_app context constructor (List.Old.map (fun (_, t) -> term t) mts)
+         Z3.Expr.mk_app context constructor (List.map ~f:(fun (_, t) -> term t) mts)
       | RecordMember (t, member) ->
          let members = BT.record_bt (IT.bt t) in
          let members_i = List.Old.mapi (fun i (m, _) -> (m, i)) members in
@@ -873,17 +873,17 @@ module Translate = struct
          let ibt = IT.bt t1 in
          make_uf (plain (!^"cons_uf"^^angles(BT.pp ibt))) (List ibt) [t1; t2]
       | NthList (i, xs, d) ->
-         let args = List.Old.map term [i; xs; d] in
+         let args = List.map ~f:term [i; xs; d] in
          let nm = bt_suffix_name "List.Old.nth_list" bt in
          let fdec = Z3.FuncDecl.mk_func_decl_s context nm
-                      (List.Old.map sort (List.Old.map IT.bt [i; xs; d])) (sort bt) in
+                      (List.map ~f:sort (List.map ~f:IT.bt [i; xs; d])) (sort bt) in
          Z3.FuncDecl.apply fdec args
       | ArrayToList (arr, i, len) ->
-         let args = List.Old.map term [arr; i; len] in
+         let args = List.map ~f:term [arr; i; len] in
          let list_bt = Option.get (BT.is_list_bt bt) in
          let nm = bt_suffix_name "array_to_list" list_bt in
          let fdec = Z3.FuncDecl.mk_func_decl_s context nm
-                      (List.Old.map sort (List.Old.map IT.bt [arr; i; len])) (sort bt) in
+                      (List.map ~f:sort (List.map ~f:IT.bt [arr; i; len])) (sort bt) in
          Z3.FuncDecl.apply fdec args
       | Aligned _ -> adj ()
       | Representable _ -> adj ()
@@ -912,10 +912,10 @@ module Translate = struct
          | _ ->
             let decl =
               Z3.FuncDecl.mk_func_decl context (symbol name)
-                (List.Old.map (fun it -> sort (IT.bt it)) args)
+                (List.map ~f:(fun it -> sort (IT.bt it)) args)
                 (sort def.return_bt)
             in
-            Z3.Expr.mk_app context decl (List.Old.map term args)
+            Z3.Expr.mk_app context decl (List.map ~f:term args)
        end
       | Let _ -> adj ()
       | Constructor (constr, args) ->
@@ -925,7 +925,7 @@ module Translate = struct
          (* let _sort = sort (IT.bt matched) in *)
          let matched = term matched in
          let cases =
-           List.Old.map (fun (pat, body) ->
+           List.map ~f:(fun (pat, body) ->
                (* print stdout (item "pat" (pp_pattern pat)); *)
                (* print stdout (item "body" (IT.pp body)); *)
                let (cond, substs) = translate_case matched pat in
@@ -964,7 +964,7 @@ module Translate = struct
            let dt_tag = constr_info.c_datatype_tag in
            assert (List.Old.for_all2 (fun (id,_) (id',_) -> Id.equal id id') constr_info.c_params args);
            let args_conds_substs =
-             List.Old.map (fun (id, (Pat (_, abt, _) as apat)) ->
+             List.map ~f:(fun (id, (Pat (_, abt, _) as apat)) ->
                  let member = datatypeMember ((matched, Datatype dt_tag), (id,abt)) in
                  translate_case member apat
                ) args
@@ -982,16 +982,16 @@ module Translate = struct
       and make_uf name ret_bt args =
         let decl =
           Z3.FuncDecl.mk_func_decl context (string name)
-            (List.Old.map (fun it -> sort (IT.bt it)) args) (sort ret_bt)
+            (List.map ~f:(fun it -> sort (IT.bt it)) args) (sort ret_bt)
         in
-        Z3.Expr.mk_app context decl (List.Old.map term args)
+        Z3.Expr.mk_app context decl (List.map ~f:term args)
 
       and datatypeCons (c_nm, args) =
         (* ensure datatype added first *)
         let constr_info = SymMap.find c_nm global.datatype_constrs in
         let dt_sort = sort (Datatype constr_info.c_datatype_tag) in
         assert (List.Old.for_all2 (fun (id,_) (id',_) -> Id.equal id id') constr_info.c_params args);
-        let args = List.Old.map (fun (_id, t) -> term t) args in
+        let args = List.map ~f:(fun (_id, t) -> term t) args in
         apply_matching_func (DatatypeConsFunc {nm = c_nm})
           (Z3.Datatype.get_constructors dt_sort) args
 
@@ -1079,7 +1079,7 @@ module Translate = struct
   let goal solver global assumptions _pointer_facts lc =
     let g1 = goal1 solver.context global lc in
     let extra1 = extra_assumptions assumptions g1.qs in
-    let extra = List.Old.map (term solver.context global) (extra1) in
+    let extra = List.map ~f:(term solver.context global) (extra1) in
     let smt2_doc = lazy (goal_to_smt2_doc solver extra g1.expr) in
     let here =  Locations.other __FUNCTION__ in
     trace [Check (IT.not_ g1.it here :: (extra1))] solver;
@@ -1103,7 +1103,7 @@ let simplifiers = [
   ]
 
 let _add_simplifiers context solver =
-  match List.Old.map (Z3.Simplifier.mk_simplifier context) simplifiers with
+  match List.map ~f:(Z3.Simplifier.mk_simplifier context) simplifiers with
   | s1::s2::rest ->
       Z3.Solver.add_simplifier context solver
         (Z3.Simplifier.and_then context s1 s2 rest)
@@ -1321,7 +1321,7 @@ module Eval = struct
 
     and z3_expr (expr : Z3.Expr.expr) : IT.t =
       let args = try Z3.Expr.get_args expr with | _ -> [] in
-      let args = List.Old.map z3_expr args in
+      let args = List.map ~f:z3_expr args in
       let loc = Locations.other __FUNCTION__ in
       match () with
 
@@ -1486,14 +1486,14 @@ module Eval = struct
            | TupleFunc {bts=_} ->
               tuple_ args loc
            | RecordFunc {mbts} ->
-              IT ((Record (List.Old.combine (List.Old.map fst mbts) args)),
+              IT ((Record (List.Old.combine (List.map ~f:fst mbts) args)),
                   Record mbts, loc)
            | RecordMemberFunc {mbts; member} ->
               let member_bt = List.Old.assoc Id.equal member mbts in
               IT ((RecordMember (List.Old.nth args 0, member)), member_bt, loc)
            | DatatypeConsFunc {nm} ->
               let info = SymMap.find nm global.datatype_constrs in
-               IT (Constructor (nm, (List.Old.combine (List.Old.map fst info.c_params) args)),
+               IT (Constructor (nm, (List.Old.combine (List.map ~f:fst info.c_params) args)),
                    Datatype info.c_datatype_tag, loc)
            | DatatypeConsRecogFunc {nm=_} ->
               (* not supported inside CN, hopefully we shouldn't need it *)
