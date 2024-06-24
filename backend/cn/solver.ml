@@ -970,7 +970,7 @@ module Translate = struct
                ) args
            in
            let args_conds, args_substs = List.Old.split args_conds_substs in
-           (Z3.Boolean.mk_and context (m1 :: args_conds), List.Old.concat args_substs)
+           (Z3.Boolean.mk_and context (m1 :: args_conds), List.concat args_substs)
        | Pat (PSym s, pbt, loc) ->
           let subst = (term (IT.sym_ (s, pbt, loc)), matched) in
           (Z3.Boolean.mk_true context, [subst])
@@ -1000,7 +1000,7 @@ module Translate = struct
         let dt_sort = sort dt_bt in
         let dt_nm = datatype_bt dt_bt in
         apply_matching_func (DatatypeAccFunc {member = member; dt = dt_nm; bt})
-          (List.Old.concat (Z3.Datatype.get_accessors dt_sort)) [dt_it]
+          (List.concat (Z3.Datatype.get_accessors dt_sort)) [dt_it]
 
       and datatypeIsCons (c_nm, t) =
         let dt_tag = (SymMap.find c_nm global.datatype_constrs).c_datatype_tag in
