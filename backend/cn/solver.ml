@@ -1479,21 +1479,21 @@ module Eval = struct
               member_ ~member_bt (List.nth_exn args 0, member) loc
            | StructFunc {tag} ->
               let sd = Memory.members (SymMap.find tag global.struct_decls) in
-              struct_ (tag, List.Old.combine sd args) loc
+              struct_ (tag, List.zip_exn sd args) loc
            | CompFunc {bts; i} ->
               let comp_bt = List.nth_exn bts i in
               nthTuple_ ~item_bt:comp_bt (i, List.nth_exn args 0) loc
            | TupleFunc {bts=_} ->
               tuple_ args loc
            | RecordFunc {mbts} ->
-              IT ((Record (List.Old.combine (List.map ~f:fst mbts) args)),
+              IT ((Record (List.zip_exn (List.map ~f:fst mbts) args)),
                   Record mbts, loc)
            | RecordMemberFunc {mbts; member} ->
               let member_bt = List.Old.assoc Id.equal member mbts in
               IT ((RecordMember (List.nth_exn args 0, member)), member_bt, loc)
            | DatatypeConsFunc {nm} ->
               let info = SymMap.find nm global.datatype_constrs in
-               IT (Constructor (nm, (List.Old.combine (List.map ~f:fst info.c_params) args)),
+               IT (Constructor (nm, (List.zip_exn (List.map ~f:fst info.c_params) args)),
                    Datatype info.c_datatype_tag, loc)
            | DatatypeConsRecogFunc {nm=_} ->
               (* not supported inside CN, hopefully we shouldn't need it *)

@@ -148,7 +148,7 @@ let main ?(with_ownership_checking=false) filename ((_, sigm) as ail_prog) outpu
     inject_structs_in_header_files xs
   in
 
-  let c_datatypes_with_fn_prots = List.Old.combine c_datatypes c_datatype_equality_fun_decls in
+  let c_datatypes_with_fn_prots = List.zip_exn c_datatypes c_datatype_equality_fun_decls in
   let c_datatypes_locs_and_strs = List.map ~f:(fun ((loc, dt_str), eq_prot_str) -> (loc, [String.concat "\n" [dt_str; eq_prot_str]])) c_datatypes_with_fn_prots in
 
   
