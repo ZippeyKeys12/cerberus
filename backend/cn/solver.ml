@@ -1305,7 +1305,7 @@ module Eval = struct
     let rec func_interp func_decl =
       let domain = Z3.FuncDecl.get_domain func_decl in
       assert (List.length domain = 1);
-      let argument_sort = List.Old.hd domain in
+      let argument_sort = List.hd_exn domain in
       let func_interp = Option.get (Z3.Model.get_func_interp model func_decl) in
       let base_value = z3_expr (Z3.Model.FuncInterp.get_else func_interp) in
       let entries = Z3.Model.FuncInterp.get_entries func_interp in
@@ -1313,7 +1313,7 @@ module Eval = struct
       List.Old.fold_right (fun entry map_value ->
           let entry_args = Z3.Model.FuncInterp.FuncEntry.get_args entry in
           assert (List.length entry_args = 1);
-          let index = List.Old.hd entry_args in
+          let index = List.hd_exn entry_args in
           let value = z3_expr (Z3.Model.FuncInterp.FuncEntry.get_value entry) in
           map_set_ map_value (z3_expr index, value) loc
         ) entries (const_map_ (z3_sort argument_sort) base_value loc)
@@ -1329,7 +1329,7 @@ module Eval = struct
          unsupported expr "quantifiers/lambdas"
 
       | () when Z3.Arithmetic.is_add expr ->
-         List.Old.fold_left (fun a b -> add_ (a, b) loc) (List.Old.hd args) (List.Old.tl args)
+         List.Old.fold_left (fun a b -> add_ (a, b) loc) (List.hd_exn args) (List.Old.tl args)
 
       | () when Z3.Boolean.is_and expr ->
          and_ args loc
@@ -1337,13 +1337,13 @@ module Eval = struct
       | () when Z3.Z3Array.is_as_array expr ->
          (* informed by this:
             https://stackoverflow.com/questions/22885457/read-func-interp-of-a-z3-array-from-the-z3-model/22918197 *)
-         let as_array_func_parameter = List.Old.hd (Z3.FuncDecl.get_parameters (Z3.Expr.get_func_decl expr)) in
+         let as_array_func_parameter = List.hd_exn (Z3.FuncDecl.get_parameters (Z3.Expr.get_func_decl expr)) in
          let func_decl = Z3.FuncDecl.Parameter.get_func_decl as_array_func_parameter in
          func_interp func_decl
 
       | () when Z3.Z3Array.is_constant_array expr ->
          let abt = z3_sort (Z3.Z3Array.get_domain (Z3.Expr.get_sort expr)) in
-         const_map_ abt (List.Old.hd args) loc
+         const_map_ abt (List.hd_exn args) loc
 
       | () when Z3.Z3Array.is_default_array expr ->
          unsupported expr "z3 array default"
@@ -1530,7 +1530,7 @@ module Eval = struct
 
         | () when Option.is_some (Z3.Model.get_func_interp model func_decl) ->
            assert (List.length args = 1);
-           map_get_ (func_interp func_decl) (List.Old.hd args) loc
+           map_get_ (func_interp func_decl) (List.hd_exn args) loc
 
         | () ->
            unsupported expr ("Reconstructing unknown Z3 term")

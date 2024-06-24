@@ -780,7 +780,7 @@ let rec cn_to_ail_expr_aux_internal
         | dt :: dts' ->
           let matching_cases = List.filter ~f:(fun (c_sym, members) -> String.equal (Sym.pp_string c_sym) (Sym.pp_string constr_sym)) dt.cn_dt_cases in
           if List.length matching_cases != 0 then
-            let (_, members) = List.Old.hd matching_cases in
+            let (_, members) = List.hd_exn matching_cases in
             (dt, members)
           else 
             find_dt_from_constructor constr_sym dts'
