@@ -132,11 +132,11 @@ let _maybe_executable_check ~with_ownership_checking ~filename ?output_filename 
         ())
     output_filename
 
-let _maybe_generate_tests output_test_dir ail_prog prog5 =
+let _maybe_generate_tests output_test_dir filename test_depth ail_prog prog5 tf =
   Option.iter (fun output_dir ->
     let (_, sigma) = ail_prog in
     Cerb_colour.without_colour (fun () ->
-      TestGeneration.main output_dir sigma prog5)
+      TestGeneration.main output_dir filename test_depth sigma prog5 tf)
     ())
     output_test_dir
 
@@ -178,6 +178,7 @@ let main
       no_inherit_loc
       magic_comment_char_dollar
       _output_test_dir
+      _test_depth
   =
   if json then begin
       if debug_level > 0 then
@@ -419,6 +420,11 @@ let output_test_dir =
   let doc = "TODO: does nothing" in
   Arg.(value & opt (some string) None & info ["output-test-dir"] ~docv:"FILE" ~doc)
 
+let test_depth =
+  let doc = "TODO: does nothing" in
+  Arg.(value & opt int 10 & info ["test-max-depth"] ~docv:"FILE" ~doc)
+  
+
 (* copied from cerberus' executable (backend/driver/main.ml) *)
 let macros =
     let macro_pair =
@@ -483,7 +489,8 @@ let () =
       batch $
       no_inherit_loc $
       magic_comment_char_dollar $
-      output_test_dir
+      output_test_dir $
+      test_depth
   in
   let version_str = "CN version: " ^ Cn_version.git_version in
   let cn_info = Cmd.info "cn" ~version:version_str in
