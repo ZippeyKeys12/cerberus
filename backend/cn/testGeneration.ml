@@ -9,13 +9,13 @@ module LAT = LogicalArgumentTypes
 module CF = Cerb_frontend
 open CF
 
-let weak_sym_equal s1 s2 = String.equal (Pp_symbol.to_string_pretty s1) (Pp_symbol.to_string_pretty s2)
-
-let no_quals : Ctype.qualifiers = { const = false; restrict = false; volatile = false }
+let weak_sym_equal s1 s2 =
+  String.equal (Pp_symbol.to_string_pretty s1) (Pp_symbol.to_string_pretty s2)
+;;
 
 let string_of_ctype (ty : Ctype.ctype) : string =
   Cerb_colour.do_colour := false;
-  let tmp = String_ail.string_of_ctype ~is_human:true no_quals ty ^ " " in
+  let tmp = String_ail.string_of_ctype ~is_human:true Ctype.no_qualifiers ty ^ " " in
   Cerb_colour.do_colour := true;
   tmp
 ;;
@@ -145,123 +145,10 @@ let string_of_goal ((vars, ms, locs, cs) : goal) : string =
   ^ "\n"
 ;;
 
-let rec get_free_vars_pat_ (p : _ IT.pattern_) : Sym.t list =
-  match p with
-  | PSym x -> [ x ]
-  | PWild -> []
-  | PConstructor (_, xps) ->
-    xps |> List.map snd |> List.map get_free_vars_pat |> List.flatten
-
-and get_free_vars_pat (p : _ IT.pattern) : Sym.t list =
-  let (Pat (p', _, _)) = p in
-  get_free_vars_pat_ p'
-;;
-
-(* let collect *)
-
-let rec sub_sym_it_ (x : Sym.sym) (v : IT.t) (e : BT.t IT.term_) : BT.t IT.term_ =
-  match e with
-  | Sym x' ->
-    if weak_sym_equal x x'
-    then (
-      let (IT (v, _, _)) = v in
-      v)
-    else e
-  (* *)
-  | Unop (op, e') -> Unop (op, sub_sym_it x v e')
-  | Binop (op, e1, e2) -> Binop (op, sub_sym_it x v e1, sub_sym_it x v e2)
-  | ITE (e_if, e_then, e_else) ->
-    ITE (sub_sym_it x v e_if, sub_sym_it x v e_then, sub_sym_it x v e_else)
-  | EachI ((min, (x', bt), max), e') ->
-    if weak_sym_equal x x' then e else EachI ((min, (x', bt), max), sub_sym_it x v e')
-  | Tuple es -> Tuple (List.map (sub_sym_it x v) es)
-  | NthTuple (i, e') -> NthTuple (i, sub_sym_it x v e')
-  | Struct (x', xes) -> Struct (x', List.map (fun (x', e') -> x', sub_sym_it x v e') xes)
-  | StructMember (e', x') -> StructMember (sub_sym_it x v e', x')
-  | StructUpdate ((e', x'), e'') ->
-    StructUpdate ((sub_sym_it x v e', x'), sub_sym_it x v e'')
-  | Record xes -> Record (List.map (fun (x', e') -> x', sub_sym_it x v e') xes)
-  | RecordMember (e', x') -> RecordMember (sub_sym_it x v e', x')
-  | RecordUpdate ((e', x'), e'') ->
-    RecordUpdate ((sub_sym_it x v e', x'), sub_sym_it x v e'')
-  | Constructor (x', xes) ->
-    Constructor (x', List.map (fun (x', e') -> x', sub_sym_it x v e') xes)
-  | MemberShift (e', x', x'') -> MemberShift (sub_sym_it x v e', x', x'')
-  | ArrayShift { base; ct; index } ->
-    ArrayShift { base = sub_sym_it x v base; ct; index = sub_sym_it x v index }
-  | CopyAllocId { addr; loc } ->
-    CopyAllocId { addr = sub_sym_it x v addr; loc = sub_sym_it x v loc }
-  | Cons (e1, e2) -> Cons (sub_sym_it x v e1, sub_sym_it x v e2)
-  | Head e' -> Head (sub_sym_it x v e')
-  | Tail e' -> Tail (sub_sym_it x v e')
-  | NthList (e1, e2, e3) ->
-    NthList (sub_sym_it x v e1, sub_sym_it x v e2, sub_sym_it x v e3)
-  | ArrayToList (e1, e2, e3) ->
-    ArrayToList (sub_sym_it x v e1, sub_sym_it x v e2, sub_sym_it x v e3)
-  | Representable (ty, e') -> Representable (ty, sub_sym_it x v e')
-  | Good (ty, e') -> Good (ty, sub_sym_it x v e')
-  | Aligned { t; align } -> Aligned { t = sub_sym_it x v t; align = sub_sym_it x v align }
-  | WrapI (ty, e') -> WrapI (ty, sub_sym_it x v e')
-  | MapConst (bt, e') -> MapConst (bt, sub_sym_it x v e')
-  | MapSet (e1, e2, e3) -> MapSet (sub_sym_it x v e1, sub_sym_it x v e2, sub_sym_it x v e3)
-  | MapGet (e1, e2) -> MapGet (sub_sym_it x v e1, sub_sym_it x v e2)
-  | MapDef (xbt, e') -> MapDef (xbt, sub_sym_it x v e')
-  | Apply (x', es) -> Apply (x', List.map (sub_sym_it x v) es)
-  | Let ((x', e1), e2) ->
-    if weak_sym_equal x x'
-    then Let ((x', sub_sym_it x v e1), e2)
-    else Let ((x', sub_sym_it x v e1), sub_sym_it x v e2)
-  | Match (e', pes) ->
-    Match
-      ( sub_sym_it x v e'
-      , List.map
-          (fun (p, e') ->
-            ( p
-            , if List.find_opt (weak_sym_equal x) (get_free_vars_pat p) |> Option.is_some
-              then e'
-              else sub_sym_it x v e' ))
-          pes )
-  | Cast (bt, e') -> Cast (bt, sub_sym_it x v e')
-  (* *)
-  | Const _ | SizeOf _ | OffsetOf _ | Nil _ -> e
-
-and sub_sym_it (x : Sym.sym) (v : IT.t) (e : IT.t) : IT.t =
-  let (IT (tm, bt, loc)) = e in
-  IT (sub_sym_it_ x v tm, bt, loc)
-;;
-
-let sub_sym_lc (x : Sym.sym) (v : IT.t) (e : LC.t) : LC.t =
-  match e with
-  | T it -> T (sub_sym_it x v it)
-  | Forall ((x', bt), it) ->
-    if weak_sym_equal x x' then e else Forall ((x', bt), sub_sym_it x v it)
-;;
-
-let sub_sym_ret (x : Sym.sym) (v : IT.t) (e : RET.t) : RET.t =
-  match e with
-  | P { name; pointer; iargs } ->
-    P { name; pointer = sub_sym_it x v pointer; iargs = List.map (sub_sym_it x v) iargs }
-  | Q _ -> failwith "`each` resource unsupported"
-;;
-
-let rec sub_sym_lat (x : Sym.sym) (v : IT.t) (e : _ LAT.t) : _ LAT.t =
-  match e with
-  | Define ((x', it), info, e') ->
-    if weak_sym_equal x x'
-    then Define ((x', sub_sym_it x v it), info, e')
-    else Define ((x', sub_sym_it x v it), info, sub_sym_lat x v e')
-  | Resource ((x', (ret, bt)), info, e') ->
-    if weak_sym_equal x x'
-    then Resource ((x', (sub_sym_ret x v ret, bt)), info, e')
-    else Resource ((x', (sub_sym_ret x v ret, bt)), info, sub_sym_lat x v e')
-  | Constraint (lc, info, e') -> Constraint (sub_sym_lc x v lc, info, sub_sym_lat x v e')
-  | I _ -> e
-;;
-
 let sub_sym_clause (x : Sym.sym) (v : IT.t) (e : RP.clause) : RP.clause =
   { loc = e.loc
-  ; guard = sub_sym_it x v e.guard
-  ; packing_ft = sub_sym_lat x v e.packing_ft
+  ; guard = IT.subst (IT.make_subst [ x, v ]) e.guard
+  ; packing_ft = LAT.subst IT.subst (IT.make_subst [ x, v ]) e.packing_ft
   }
 ;;
 
@@ -404,13 +291,14 @@ and collect_lat_it
   (lat : IT.t LAT.t)
   : (IT.t * variables * members * locations * constraints) list
   =
+  let lat_subst x v e = LAT.subst IT.subst (IT.make_subst [ x, v ]) e in
   match lat with
   | Define ((x, tm), _, lat') ->
-    collect_lat_it max_depth sigma prog5 vars ms (sub_sym_lat x tm lat')
+    collect_lat_it max_depth sigma prog5 vars ms (lat_subst x tm lat')
   | Resource ((x, (ret, _)), _, lat') ->
     collect_ret max_depth sigma prog5 vars ms ret
     >>= fun (v, vars, ms, locs, cs) ->
-    collect_lat_it max_depth sigma prog5 vars ms (sub_sym_lat x v lat')
+    collect_lat_it max_depth sigma prog5 vars ms (lat_subst x v lat')
     >>= fun (v', vars, ms, locs', cs') -> return (v', vars, ms, locs @ locs', cs @ cs')
   | Constraint (lc, _, lat') ->
     collect_lc vars ms lc
@@ -426,16 +314,17 @@ let rec collect_lat
   (prog5 : unit Mucore.mu_file)
   (vars : variables)
   (ms : members)
-  (lat : _ LAT.t)
+  (lat : unit LAT.t)
   : (variables * members * locations * constraints) list
   =
+  let lat_subst x v e = LAT.subst (fun _ x -> x) (IT.make_subst [ x, v ]) e in
   match lat with
   | Define ((x, tm), _, lat') ->
-    collect_lat max_depth sigma prog5 vars ms (sub_sym_lat x tm lat')
+    collect_lat max_depth sigma prog5 vars ms (lat_subst x tm lat')
   | Resource ((x, (ret, _)), _, lat') ->
     collect_ret max_depth sigma prog5 vars ms ret
     >>= fun (v, vars, ms, locs, cs) ->
-    collect_lat max_depth sigma prog5 vars ms (sub_sym_lat x v lat')
+    collect_lat max_depth sigma prog5 vars ms (lat_subst x v lat')
     >>= fun (vars, ms, locs', cs') -> return (vars, ms, locs @ locs', cs @ cs')
   | Constraint (lc, _, lat') ->
     collect_lc vars ms lc
@@ -446,15 +335,15 @@ let rec collect_lat
 ;;
 
 let sub_sym_variables (x : Symbol.sym) (v : IT.t) (vars : variables) : variables =
-  List.map (fun (x', (ty, e)) -> x', (ty, sub_sym_it x v e)) vars
+  List.map (fun (x', (ty, e)) -> x', (ty, IT.subst (IT.make_subst [ x, v ]) e)) vars
 ;;
 
 let sub_sym_locations (x : Symbol.sym) (v : IT.t) (locs : locations) : locations =
-  List.map (fun (e, y) -> sub_sym_it x v e, y) locs
+  List.map (fun (e, y) -> IT.subst (IT.make_subst [ x, v ]) e, y) locs
 ;;
 
 let sub_sym_constraints (x : Symbol.sym) (v : IT.t) (cs : constraints) : constraints =
-  List.map (fun e -> sub_sym_it x v e) cs
+  List.map (fun e -> IT.subst (IT.make_subst [ x, v ]) e) cs
 ;;
 
 let sub_sym_goal (x : Symbol.sym) (v : IT.t) ((vars, ms, locs, cs) : goal) : goal =
@@ -606,7 +495,7 @@ let rec eval_term_ (ctx : context) (t : BT.t IT.term_) : cn_value =
     CNVal_bits
       ( (Unsigned, Memory.size_of_ctype Sctypes.(Integer Size_t))
       , Z.of_int (Memory.size_of_ctype ty) )
-  | Let ((x, it1), it2) -> eval_term ctx (sub_sym_it x it1 it2)
+  | Let ((x, it1), it2) -> eval_term ctx (IT.subst (IT.make_subst [ x, it1 ]) it2)
   (* *)
   | Unop (BWCLZNoSMT, _) -> failwith "todo: add support for Unop BWCLZNoSMT"
   | Unop (BWCTZNoSMT, _) -> failwith "todo: add support for Unop BWCTZNoSMT"
@@ -968,7 +857,7 @@ let rec compile_singles'
     if no_free_vars
     then (
       let gen = compile_gen x ty e relevant_cs in
-      let gen_loc = Alloc (Ctype.Ctype ([], Pointer (no_quals, ty)), x) in
+      let gen_loc = Alloc (Ctype.Ctype ([], Pointer (Ctype.no_qualifiers, ty)), x) in
       match get_loc x with
       | Some x_loc -> compile_singles' ((x_loc, gen_loc) :: (x, gen) :: gtx) locs cs iter'
       | None -> compile_singles' ((x, gen) :: gtx) locs cs iter')
@@ -1024,7 +913,7 @@ let rec compile_structs'
       match get_loc x with
       | Some loc ->
         let gen = Struct (ty, mems) in
-        let gen_loc = Alloc (Ctype.Ctype ([], Pointer (no_quals, ty)), x) in
+        let gen_loc = Alloc (Ctype.Ctype ([], Pointer (Ctype.no_qualifiers, ty)), x) in
         (loc, gen_loc) :: (x, gen) :: gtx, ms'
       | None -> (x, Struct (ty, mems)) :: gtx, ms')
   | [] -> gtx, []
@@ -1266,7 +1155,9 @@ let generate_pbt
       args
   in
   output_string oc ("/* Begin:\n" ^ string_of_goal (vars, ms, [], []) ^ "*/\n\n");
-  let lat = get_lat_from_at (Option.get instrumentation.internal) in
+  let lat =
+    Option.get instrumentation.internal |> get_lat_from_at |> LAT.map (fun _ -> ())
+  in
   List.iteri
     (fun i g ->
       output_string oc ("/* Collected:\n" ^ string_of_goal g ^ "*/\n\n");
