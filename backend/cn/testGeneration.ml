@@ -60,7 +60,6 @@ type cn_value =
   | CNVal_bits _ -> failwith "unreachable (Generator.string_of_value)"
 ;; *)
 
-type context = (Symbol.sym * (Ctype.ctype * cn_value)) list
 type variables = (Symbol.sym * (Ctype.ctype * IT.t)) list
 
 let string_of_variables (vars : variables) : string =
@@ -365,7 +364,7 @@ let inline_constants (g : goal) : goal =
   inline_constants' g cs
 ;;
 
-let rec eval_term_ (ctx : context) (t : BT.t IT.term_) : cn_value =
+let rec eval_term_ (t : BT.t IT.term_) : cn_value =
   match t with
   | Const c ->
     (match c with
@@ -375,91 +374,91 @@ let rec eval_term_ (ctx : context) (t : BT.t IT.term_) : cn_value =
      | Bool b -> CNVal_bool b
      | Unit -> CNVal_unit
      | _ -> failwith "unsupported Const")
-  | Sym x -> List.assoc weak_sym_equal x ctx |> snd
+  | Sym x -> failwith ("free variable " ^ Pp_symbol.to_string_pretty x)
   | Unop (Not, it) ->
-    (match eval_term ctx it with
+    (match eval_term it with
      | CNVal_bool b -> CNVal_bool (not b)
      | _ -> failwith "unsupported Not")
   | Unop (Negate, it) ->
-    (match eval_term ctx it with
+    (match eval_term it with
      | CNVal_integer n -> CNVal_integer (Z.neg n)
      | CNVal_bits ((sign, bits), n) -> CNVal_bits ((sign, bits), Z.neg n)
      | _ -> failwith "unsupported Negate")
   | Binop (And, it1, it2) ->
-    (match eval_term ctx it1, eval_term ctx it2 with
+    (match eval_term it1, eval_term it2 with
      | CNVal_bool b1, CNVal_bool b2 -> CNVal_bool (b1 && b2)
      | _ -> failwith "unsupported And")
   | Binop (Or, it1, it2) ->
-    (match eval_term ctx it1, eval_term ctx it2 with
+    (match eval_term it1, eval_term it2 with
      | CNVal_bool b1, CNVal_bool b2 -> CNVal_bool (b1 || b2)
      | _ -> failwith "unsupported Or")
   | Binop (Implies, it1, it2) ->
-    (match eval_term ctx it1, eval_term ctx it2 with
+    (match eval_term it1, eval_term it2 with
      | CNVal_bool b1, CNVal_bool b2 -> CNVal_bool ((not b1) || b2)
      | _ -> failwith "unsupported Impl")
   | Binop (Add, it1, it2) ->
-    (match eval_term ctx it1, eval_term ctx it2 with
+    (match eval_term it1, eval_term it2 with
      | CNVal_integer n1, CNVal_integer n2 -> CNVal_integer (Z.add n1 n2)
      | CNVal_bits ((sign1, bits1), n1), CNVal_bits ((sign2, bits2), n2)
        when Stdlib.( = ) sign1 sign2 && bits1 = bits2 ->
        CNVal_bits ((sign1, bits1), Z.add n1 n2)
      | _ -> failwith "unsupported Add")
   | Binop (Sub, it1, it2) ->
-    (match eval_term ctx it1, eval_term ctx it2 with
+    (match eval_term it1, eval_term it2 with
      | CNVal_integer n1, CNVal_integer n2 -> CNVal_integer (Z.sub n1 n2)
      | CNVal_bits ((sign1, bits1), n1), CNVal_bits ((sign2, bits2), n2)
        when Stdlib.( = ) sign1 sign2 && bits1 = bits2 ->
        CNVal_bits ((sign1, bits1), Z.sub n1 n2)
      | _ -> failwith "unsupported Sub")
   | Binop (Mul, it1, it2) | Binop (MulNoSMT, it1, it2) ->
-    (match eval_term ctx it1, eval_term ctx it2 with
+    (match eval_term it1, eval_term it2 with
      | CNVal_integer n1, CNVal_integer n2 -> CNVal_integer (Z.mul n1 n2)
      | CNVal_bits ((sign1, bits1), n1), CNVal_bits ((sign2, bits2), n2)
        when Stdlib.( = ) sign1 sign2 && bits1 = bits2 ->
        CNVal_bits ((sign1, bits1), Z.mul n1 n2)
      | _ -> failwith "unsupported Mul")
   | Binop (Div, it1, it2) | Binop (DivNoSMT, it1, it2) ->
-    (match eval_term ctx it1, eval_term ctx it2 with
+    (match eval_term it1, eval_term it2 with
      | CNVal_integer n1, CNVal_integer n2 -> CNVal_integer (Z.div n1 n2)
      | CNVal_bits ((sign1, bits1), n1), CNVal_bits ((sign2, bits2), n2)
        when Stdlib.( = ) sign1 sign2 && bits1 = bits2 ->
        CNVal_bits ((sign1, bits1), Z.div n1 n2)
      | _ -> failwith "unsupported Div")
   | Binop (Rem, it1, it2) | Binop (RemNoSMT, it1, it2) ->
-    (match eval_term ctx it1, eval_term ctx it2 with
+    (match eval_term it1, eval_term it2 with
      | CNVal_integer n1, CNVal_integer n2 -> CNVal_integer (Z.rem n1 n2)
      | CNVal_bits ((sign1, bits1), n1), CNVal_bits ((sign2, bits2), n2)
        when Stdlib.( = ) sign1 sign2 && bits1 = bits2 ->
        CNVal_bits ((sign1, bits1), Z.rem n1 n2)
      | _ -> failwith "unsupported Rem")
   | Binop (LT, it1, it2) | Binop (LTPointer, it1, it2) ->
-    (match eval_term ctx it1, eval_term ctx it2 with
+    (match eval_term it1, eval_term it2 with
      | CNVal_integer n1, CNVal_integer n2 -> CNVal_bool (Z.lt n1 n2)
      | CNVal_bits ((sign1, bits1), n1), CNVal_bits ((sign2, bits2), n2)
        when Stdlib.( = ) sign1 sign2 && bits1 = bits2 -> CNVal_bool (Z.lt n1 n2)
      | _ -> failwith "unsupported LT")
   | Binop (LE, it1, it2) | Binop (LEPointer, it1, it2) ->
-    (match eval_term ctx it1, eval_term ctx it2 with
+    (match eval_term it1, eval_term it2 with
      | CNVal_integer n1, CNVal_integer n2 -> CNVal_bool (Z.leq n1 n2)
      | CNVal_bits ((sign1, bits1), n1), CNVal_bits ((sign2, bits2), n2)
        when Stdlib.( = ) sign1 sign2 && bits1 = bits2 -> CNVal_bool (Z.leq n1 n2)
      | _ -> failwith "unsupported LE")
   | Binop (Min, it1, it2) ->
-    (match eval_term ctx it1, eval_term ctx it2 with
+    (match eval_term it1, eval_term it2 with
      | CNVal_integer n1, CNVal_integer n2 -> CNVal_integer (Z.min n1 n2)
      | CNVal_bits ((sign1, bits1), n1), CNVal_bits ((sign2, bits2), n2)
        when Stdlib.( = ) sign1 sign2 && bits1 = bits2 ->
        CNVal_bits ((sign1, bits1), Z.min n1 n2)
      | _ -> failwith "unsupported Min")
   | Binop (Max, it1, it2) ->
-    (match eval_term ctx it1, eval_term ctx it2 with
+    (match eval_term it1, eval_term it2 with
      | CNVal_integer n1, CNVal_integer n2 -> CNVal_integer (Z.max n1 n2)
      | CNVal_bits ((sign1, bits1), n1), CNVal_bits ((sign2, bits2), n2)
        when Stdlib.( = ) sign1 sign2 && bits1 = bits2 ->
        CNVal_bits ((sign1, bits1), Z.max n1 n2)
      | _ -> failwith "unsupported Max")
   | Binop (EQ, it1, it2) ->
-    (match eval_term ctx it1, eval_term ctx it2 with
+    (match eval_term it1, eval_term it2 with
      | CNVal_null, CNVal_null | CNVal_unit, CNVal_unit -> CNVal_bool true
      | CNVal_integer n1, CNVal_integer n2 -> CNVal_bool (Z.equal n1 n2)
      | CNVal_bits ((sign1, bits1), n1), CNVal_bits ((sign2, bits2), n2)
@@ -467,18 +466,18 @@ let rec eval_term_ (ctx : context) (t : BT.t IT.term_) : cn_value =
      | CNVal_bool b1, CNVal_bool b2 -> CNVal_bool (Bool.equal b1 b2)
      | _ -> failwith "unsupported EQ")
   | ITE (it1, it2, it3) ->
-    (match eval_term ctx it1 with
-     | CNVal_bool b -> if b then eval_term ctx it2 else eval_term ctx it3
+    (match eval_term it1 with
+     | CNVal_bool b -> if b then eval_term it2 else eval_term it3
      | _ -> failwith "unsupported ITE")
   (* | Struct (x, yits) ->
      CNVal_struct
      (List.map
      (fun (y, it) ->
      let (Sym.Identifier (_, y)) = y in
-     y, eval_term ctx it)
+     y, eval_term it)
      yits) *)
   | StructMember (it', x) ->
-    (match eval_term ctx it' with
+    (match eval_term it' with
      | CNVal_struct ms ->
        let (Sym.Identifier (_, x)) = x in
        List.assoc String.equal x ms |> snd
@@ -489,13 +488,13 @@ let rec eval_term_ (ctx : context) (t : BT.t IT.term_) : cn_value =
       , List.map
           (fun (y, it) ->
             let (Sym.Identifier (_, y)) = y in
-            y, eval_term ctx it)
+            y, eval_term it)
           yits )
   | SizeOf ty ->
     CNVal_bits
       ( (Unsigned, Memory.size_of_ctype Sctypes.(Integer Size_t))
       , Z.of_int (Memory.size_of_ctype ty) )
-  | Let ((x, it1), it2) -> eval_term ctx (IT.subst (IT.make_subst [ x, it1 ]) it2)
+  | Let ((x, it1), it2) -> eval_term (IT.subst (IT.make_subst [ x, it1 ]) it2)
   (* *)
   | Unop (BWCLZNoSMT, _) -> failwith "todo: add support for Unop BWCLZNoSMT"
   | Unop (BWCTZNoSMT, _) -> failwith "todo: add support for Unop BWCTZNoSMT"
@@ -545,9 +544,9 @@ let rec eval_term_ (ctx : context) (t : BT.t IT.term_) : cn_value =
   | Match _ -> failwith "todo: add support for Match"
   | Cast _ -> failwith "todo: add support for Cast"
 
-and eval_term (ctx : context) (it : IT.t) : cn_value =
+and eval_term (it : IT.t) : cn_value =
   let (IT (it, _, _)) = it in
-  eval_term_ ctx it
+  eval_term_ it
 ;;
 
 let rec remove_tautologies ((vars, ms, locs, cs) : goal) : goal =
@@ -556,7 +555,7 @@ let rec remove_tautologies ((vars, ms, locs, cs) : goal) : goal =
     when weak_sym_equal x y -> remove_tautologies (vars, ms, locs, cs)
   | c :: cs ->
     (try
-       let v = eval_term [] c in
+       let v = eval_term c in
        if Stdlib.( = ) v (CNVal_bool true)
        then remove_tautologies (vars, ms, locs, cs)
        else failwith "Inconsistent constraints"
