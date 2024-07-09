@@ -8,6 +8,7 @@ module LC = LogicalConstraints
 module LAT = LogicalArgumentTypes
 module CF = Cerb_frontend
 open CF
+open EachElimination
 
 let weak_sym_equal s1 s2 =
   String.equal (Pp_symbol.to_string_pretty s1) (Pp_symbol.to_string_pretty s2)
@@ -290,7 +291,9 @@ and collect_lat_it
   (lat : IT.t LAT.t)
   : (IT.t * variables * members * locations * constraints) list
   =
-  let lat_subst x v e = LAT.subst IT.subst (IT.make_subst [ x, v ]) e in
+  let lat_subst x v e =
+    LAT.subst IT.subst (IT.make_subst [ x, v ]) e
+  in
   match lat with
   | Define ((x, tm), _, lat') ->
     collect_lat_it max_depth sigma prog5 vars ms (lat_subst x tm lat')
@@ -560,7 +563,7 @@ let rec remove_tautologies ((vars, ms, locs, cs) : goal) : goal =
        then remove_tautologies (vars, ms, locs, cs)
        else failwith "Inconsistent constraints"
      with
-     | Not_found ->
+     | Not_found | Failure _ ->
        let vars, ms, locs, cs = remove_tautologies (vars, ms, locs, cs) in
        vars, ms, locs, c :: cs)
   | [] -> vars, ms, locs, cs
@@ -570,6 +573,9 @@ let rec cnf_ (e : BT.t IT.term_) : BT.t IT.term_ =
   match e with
   (* Double negation elimination *)
   | Unop (Not, IT (Unop (Not, IT (e, _, _)), _, _)) -> e
+  (* Flip inequalities *)
+  | Unop (Not, IT (Binop (LT, e1, e2), _, _)) -> Binop (LE, e2, e1)
+  | Unop (Not, IT (Binop (LE, e1, e2), _, _)) -> Binop (LT, e2, e1)
   (* De Morgan's Law *)
   | Unop (Not, IT (Binop (And, e1, e2), info, loc)) ->
     Binop (Or, IT (Unop (Not, cnf e1), info, loc), IT (Unop (Not, cnf e2), info, loc))
@@ -1177,6 +1183,7 @@ let main
   (tf : test_framework)
   : unit
   =
+  let prog5 = eliminate_each prog5 in
   let instrumentation_list, _symbol_table =
     Core_to_mucore.collect_instrumentation prog5
   in
