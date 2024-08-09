@@ -1,46 +1,58 @@
 module BT = BaseTypes
 module IT = IndexTerms
+module RET = ResourceTypes
+module LC = LogicalConstraints
 module LAT = LogicalArgumentTypes
 module CF = Cerb_frontend
 
-type variables = (Sym.sym * (CF.Ctype.ctype * IT.t)) list
+type resource_constraint = Sym.t * RET.t
 
-val pp_variables : variables -> Pp.document
+val pp_resource_constraint : resource_constraint -> Pp.document
 
-type locations = (IT.t * Sym.sym) list
+type resource_constraints = resource_constraint list
 
-val pp_locations : locations -> Pp.document
+val pp_resource_constraints : resource_constraints -> Pp.document
 
-(** Tracks indirection for a struct's member [name],
-    where [carrier] carries its value of type [cty].
-    **)
-type member =
-  { name : string; (** The name of the member *)
-    carrier : Sym.sym; (** The name of the carrier*)
-    cty : CF.Ctype.ctype (** The type of the member *)
-  }
+type logical_constraints = LC.t list
 
-val pp_member : member -> Pp.document
+val pp_logical_constraints : logical_constraints -> Pp.document
 
-type members = (Sym.sym * member list) list
-
-val pp_members : members -> Pp.document
-
-type constraints = IT.t list
+type constraints = resource_constraints * logical_constraints
 
 val pp_constraints : constraints -> Pp.document
 
-type goal = variables * members * locations * constraints
+type clause =
+  { guard : IT.t;
+    cs : constraints;
+    it : IT.t
+  }
 
-val pp_goal : goal -> Pp.document
+val pp_clause : clause -> Pp.document
 
-(** Steps through the given [LAT.t] collecting a [goal] for our generator *)
-val collect
-  :  max_unfolds:int ->
-  Cerb_frontend.GenTypes.genTypeCategory Cerb_frontend.AilSyntax.sigma ->
-  unit Mucore.mu_file ->
-  (Sym.sym * CF.Ctype.ctype) list ->
-  unit LAT.t ->
-  goal list
+type constraint_definition_ =
+  | Pred of clause list
+  | Spec of constraints
 
-val simplify : goal -> goal
+and constraint_definition =
+  | CD of
+      { fn : string; (** File this definition came from *)
+        name : Sym.t;
+        iargs : (Sym.t * BT.t) list;
+        oarg : BT.t;
+        def : constraint_definition_
+      }
+
+val pp_constraint_definition : constraint_definition -> Pp.document
+
+type constraint_context = (Sym.t * constraint_definition) list
+
+val pp_constraint_context : constraint_context -> Pp.document
+
+type t = constraint_context
+
+val pp : t -> Pp.document
+
+(** Collecting [constraints] for all specifications and predicates in [filename] *)
+val collect : unit Mucore.mu_file -> string list -> t
+
+val simplify : t -> t

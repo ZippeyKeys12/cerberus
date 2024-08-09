@@ -16,9 +16,9 @@
     3. Convert the generators into C++
 
     These 3 stages break down into 5 function calls:
-    1a. [Constraints.collect]- Takes CN specifications and produce a [goal] summarizing the constraints
-    1b. [Constraints.simplify] - Rewrite our [goal] via various passes
-    2a. [Dsl.compile] - Compiles our [goal] into a [gen_context] in our DSL
+    1a. [Constraints.collect]- Takes CN specifications and produce [constraints]
+    1b. [Constraints.simplify] - Rewrite our [constraints] via various passes
+    2a. [Dsl.compile] - Compiles our [constraints] into a [gen_context] in our DSL
     2b. [Dsl.optimize] - Performs program optimizations on our [gen_context]
     3. [Codify.codify_pbt] - Converts our [gen_context] into RapidCheck generators *)
 
