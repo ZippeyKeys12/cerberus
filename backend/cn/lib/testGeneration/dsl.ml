@@ -171,7 +171,6 @@ module Compile = struct
 
     module G = Graph.Persistent.Digraph.Concrete (Pair)
     module Components = Graph.Components.Undirected (G)
-    module WeakTopological = Graph.WeakTopological.Make (G)
 
     module Dot = Graph.Graphviz.Dot (struct
         include G (* use the graph module from above *)
@@ -301,58 +300,16 @@ module Compile = struct
         (Graph.WeakTopological.fold_left (fun acc elem -> acc @ [ aux elem ]) [] ho)
 
 
-    (** Get hierarchical orderings for generation *)
-    let weak_topo_graphs (g : G.t) : G.vertex Graph.WeakTopological.t list =
-      let rec aux g hos =
-        if G.is_empty g then
-          hos
-        else
-          let module Choose = Graph.Oper.Choose (G) in
-          let root =
-            G.fold_vertex
-              (fun v ores ->
-                match ores with None when G.in_degree g v = 0 -> Some v | _ -> None)
-              g
-              None
-            |> Option.value ~default:(Choose.choose_vertex g)
-          in
-          let ho = WeakTopological.recursive_scc g root in
-          Pp.debug
-            1
-            (lazy
-              (let open Pp in
-               string "Weak topological sort" ^^ space ^^ pp_weak_topological ho));
-          let rec aux' (g' : G.t) (elem : G.vertex Graph.WeakTopological.element) : G.t =
-            match elem with
-            | Vertex x -> G.remove_vertex g' x
-            | Component (x, elems) ->
-              Graph.WeakTopological.fold_left aux' (G.remove_vertex g' x) elems
-          in
-          let g = Graph.WeakTopological.fold_left aux' g ho in
-          aux g (ho :: hos)
-      in
-      aux g []
-
-
     (** Choose an optimal linear ordering from a hierarchical ordering
         FIXME: Currently just selects arbitrary one, maybe wait on Leo's work?
         **)
-    let choose_ordering (ho : G.vertex Graph.WeakTopological.t) : G.vertex list =
-      let rec aux (acc : G.vertex list) (elem : G.vertex Graph.WeakTopological.element)
-        : G.vertex list
-        =
-        match elem with
-        | Vertex x -> x :: acc
-        | Component (x, elems) -> x :: Graph.WeakTopological.fold_left aux [] elems
-      in
-      List.rev (Graph.WeakTopological.fold_left aux [] ho)
+    let choose_ordering (g : G.t) : G.vertex list =
+      let module Topological = Graph.Topological.Make (G) in
+      List.rev (Topological.fold List.cons g [])
 
 
     let select (args : (Sym.t * BT.t) list) (cs : constraints) : G.vertex list =
-      construct_graph args cs
-      |> weak_topo_graphs
-      |> List.map choose_ordering
-      |> List.flatten
+      construct_graph args cs |> choose_ordering
   end
 
   let rec get_dummy_context (cs_ctx : Constraints.t) : gen_context =
@@ -386,7 +343,7 @@ module Compile = struct
           match c with Logical lc -> lc | _ -> failwith ("unreachable (" ^ __LOC__ ^ ")"))
         logical_cs
     in
-    let g_assert g' = if List.is_empty lcs then g else Assert (lcs, g') in
+    let g_assert g' = if List.is_empty lcs then g' else Assert (lcs, g') in
     match resource_cs with
     | _ :: _ :: _ ->
       Cerb_debug.error "todo: multiple resource constraints are not supported"
@@ -571,36 +528,38 @@ let compile = Compile.compile
 module Optimize = struct
   module BespokeGenerators = struct
     let rec equality_constraints (g : gen) : gen =
-      match g with
-      | Let ([ x ], GT (gt, Arbitrary), Assert (lcs, g')) ->
-        (* Find applicable constraints *)
-        let lcs_eq, lcs_rest =
-          List.partition
-            (fun lc ->
-              match lc with
-              | LC.T (IT (Binop (EQ, IT (Sym x', _, _), _), _, _))
-              | LC.T (IT (Binop (EQ, _, IT (Sym x', _, _)), _, _)) ->
-                Sym.equal x x'
-              | _ -> false)
-            lcs
-        in
-        (* The optimization itself *)
-        let optimize (it : IT.t) (lcs' : LC.t list) =
-          let lc_rest = if List.is_empty lcs' then lcs_rest else lcs' @ lcs_rest in
-          let g' = if List.is_empty lc_rest then g' else Assert (lcs_rest, g') in
-          Let ([ x ], GT (gt, Just it), g')
-        in
-        (match lcs_eq with
-         | LC.T (IT (Binop (EQ, IT (Sym x', _, _), it), _, _)) :: lcs_eq'
-           when Sym.equal x x' ->
-           optimize it lcs_eq'
-         | LC.T (IT (Binop (EQ, it, IT (Sym x', _, _)), _, _)) :: lcs_eq'
-           when Sym.equal x x' ->
-           optimize it lcs_eq'
-         | _ :: _ -> failwith ("unreachable (" ^ __LOC__ ^ ")")
-         | [] ->
-           Let ([ x ], GT (gt, Arbitrary), Assert (lcs, map_gen equality_constraints g')))
-      | _ -> map_gen equality_constraints g
+      let g =
+        match g with
+        | Let ([ x ], GT (gt, Arbitrary), Assert (lcs, g')) ->
+          (* Find applicable constraints *)
+          let lcs_eq, lcs_rest =
+            List.partition
+              (fun lc ->
+                match lc with
+                | LC.T (IT (Binop (EQ, IT (Sym x', _, _), _), _, _))
+                | LC.T (IT (Binop (EQ, _, IT (Sym x', _, _)), _, _)) ->
+                  Sym.equal x x'
+                | _ -> false)
+              lcs
+          in
+          (* The optimization itself *)
+          let optimize (it : IT.t) (lcs' : LC.t list) =
+            let lc_rest = if List.is_empty lcs' then lcs_rest else lcs' @ lcs_rest in
+            let g' = if List.is_empty lc_rest then g' else Assert (lcs_rest, g') in
+            Let ([ x ], GT (gt, Just it), g')
+          in
+          (match lcs_eq with
+           | LC.T (IT (Binop (EQ, IT (Sym x', _, _), it), _, _)) :: lcs_eq'
+             when Sym.equal x x' ->
+             optimize it lcs_eq'
+           | LC.T (IT (Binop (EQ, it, IT (Sym x', _, _)), _, _)) :: lcs_eq'
+             when Sym.equal x x' ->
+             optimize it lcs_eq'
+           | _ :: _ -> failwith ("unreachable (" ^ __LOC__ ^ ")")
+           | [] -> Let ([ x ], GT (gt, Arbitrary), Assert (lcs, g')))
+        | _ -> g
+      in
+      map_gen equality_constraints g
 
 
     let run (g : gen) : gen = g |> equality_constraints

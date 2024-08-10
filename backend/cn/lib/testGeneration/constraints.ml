@@ -229,7 +229,12 @@ module Collect = struct
           (Logical (T (IT.not_ cl.guard here)) :: cs)
           cls'
       in
-      (cs_ctx, { guard = cl.guard; it; cs = Logical (T cl.guard) :: cs' } :: cls'')
+      ( cs_ctx,
+        { guard = cl.guard;
+          it;
+          cs = (if IT.is_true cl.guard then cs' else Logical (T cl.guard) :: cs')
+        }
+        :: cls'' )
     | [] -> (cs_ctx, [])
 
 
