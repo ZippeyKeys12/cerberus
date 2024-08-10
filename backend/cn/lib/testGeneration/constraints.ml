@@ -17,8 +17,8 @@ type constraint_ =
   | Logical of LC.t
   | Predicate of
       { name : Sym.t;
-        iargs : Sym.t list;
-        x : Sym.t
+        iargs : (Sym.t * BT.t) list;
+        oarg : Sym.t * BT.t
       }
 
 let pp_constraint (c : constraint_) : Pp.document =
@@ -35,10 +35,14 @@ let pp_constraint (c : constraint_) : Pp.document =
     ^^ angles (Sctypes.pp ty)
     ^^ parens (Sym.pp pointer)
   | Logical lc -> string "assert" ^^ parens (LC.pp lc)
-  | Predicate { name; iargs; x } ->
+  | Predicate { name; iargs; oarg } ->
     string "take"
     ^^ space
-    ^^ Sym.pp x
+    ^^ (Sym.pp @@ fst oarg)
+    ^^ space
+    ^^ colon
+    ^^ space
+    ^^ (BT.pp @@ snd oarg)
     ^^ space
     ^^ equals
     ^^ space
@@ -50,7 +54,7 @@ let pp_constraint (c : constraint_) : Pp.document =
          lparen
          (comma ^^ break 1)
          rparen
-         Sym.pp
+         (fun (x, bt) -> parens (BT.pp bt) ^^ space ^^ Sym.pp x)
          iargs
 
 
@@ -108,7 +112,7 @@ and constraint_definition =
       { fn : string; (** File this definition came from *)
         name : Sym.t;
         iargs : (Sym.t * BT.t) list;
-        oarg : BT.t;
+        oarg : BT.t option;
         def : constraint_definition_
       }
 
@@ -184,7 +188,7 @@ module Collect = struct
       (sym, Some (Logical (T (IT.eq_ (it, it') here))))
 
 
-  let of_ret (x : Sym.t) (ret : RET.t) : constraints =
+  let of_ret (prog5 : unit Mucore.mu_file) (x : Sym.t) (ret : RET.t) : constraints =
     match ret with
     | P { name = RET.Owned (ty, _); pointer = it; iargs = _ } ->
       let pointer, oc = add_indirection it in
@@ -198,7 +202,10 @@ module Collect = struct
           ([], [])
           (it :: its)
       in
-      Predicate { name; iargs; x } :: cs
+      let pred = List.assoc Sym.equal name prog5.mu_resource_predicates in
+      let iargs = List.combine iargs (BT.Loc :: List.map snd pred.iargs) in
+      let oarg = (x, pred.oarg_bt) in
+      Predicate { name; iargs; oarg } :: cs
     | Q _ -> Cerb_debug.error "todo: each not supported"
 
 
@@ -212,9 +219,17 @@ module Collect = struct
     =
     match cls with
     | cl :: cls' ->
-      let cs_ctx, (it, cs) = collect_lat_it filename prog5 cs_ctx cs cl.packing_ft in
-      let cs_ctx, cls = collect_clauses filename prog5 cs_ctx cs cls' in
-      (cs_ctx, { guard = cl.guard; it; cs } :: cls)
+      let cs_ctx, (it, cs') = collect_lat_it filename prog5 cs_ctx cs cl.packing_ft in
+      let here = Locations.other __FUNCTION__ in
+      let cs_ctx, cls'' =
+        collect_clauses
+          filename
+          prog5
+          cs_ctx
+          (Logical (T (IT.not_ cl.guard here)) :: cs)
+          cls'
+      in
+      (cs_ctx, { guard = cl.guard; it; cs = Logical (T cl.guard) :: cs' } :: cls'')
     | [] -> (cs_ctx, [])
 
 
@@ -228,40 +243,26 @@ module Collect = struct
     =
     match RET.predicate_name ret with
     | Owned _ -> cs_ctx
-    | PName psym ->
-      if List.exists (fun (psym', _) -> Sym.equal psym psym') cs_ctx then
+    | PName name ->
+      if List.exists (fun (name', _) -> Sym.equal name name') cs_ctx then
         cs_ctx
       else (
-        let pred = List.assoc Sym.equal psym prog5.mu_resource_predicates in
+        let pred = List.assoc Sym.equal name prog5.mu_resource_predicates in
+        let iargs = (pred.pointer, BT.Loc) :: pred.iargs in
+        let oarg = Some pred.oarg_bt in
         let clauses = pred.clauses |> Option.get in
         let cs_ctx, rest =
           (* Add dummy definition for [psym] *)
           collect_clauses
             filename
             prog5
-            (( psym,
-               CD
-                 { fn = filename;
-                   name = psym;
-                   iargs = pred.iargs;
-                   oarg = pred.oarg_bt;
-                   def = Pred []
-                 } )
-             :: cs_ctx)
+            ((name, CD { fn = filename; name; iargs; oarg; def = Pred [] }) :: cs_ctx)
             cs
             clauses
         in
         (* Get rid of dummy definition *)
-        let cs_ctx = List.filter (fun (psym', _) -> not (Sym.equal psym psym')) cs_ctx in
-        ( psym,
-          CD
-            { fn = filename;
-              name = psym;
-              iargs = pred.iargs;
-              oarg = pred.oarg_bt;
-              def = Pred rest
-            } )
-        :: cs_ctx)
+        let cs_ctx = List.filter (fun (psym', _) -> not (Sym.equal name psym')) cs_ctx in
+        (name, CD { fn = filename; name; iargs; oarg; def = Pred rest }) :: cs_ctx)
 
 
   and collect_lat_it
@@ -279,11 +280,11 @@ module Collect = struct
     | Resource ((x, (ret, _)), _, lat') ->
       let cs_ctx = collect_ret filename prog5 cs_ctx cs ret in
       let cs_ctx, (v', cs) = collect_lat_it filename prog5 cs_ctx cs lat' in
-      (cs_ctx, (v', of_ret x ret @ cs))
+      (cs_ctx, (v', of_ret prog5 x ret @ cs))
     | Constraint (lc, _, lat') ->
       let cs_ctx, (v, cs) = collect_lat_it filename prog5 cs_ctx cs lat' in
       (cs_ctx, (v, Logical lc :: cs))
-    | I it -> (cs_ctx, (it, []))
+    | I it -> (cs_ctx, (it, cs))
 
 
   let rec collect_lat
@@ -301,11 +302,11 @@ module Collect = struct
     | Resource ((x, (ret, _)), _, lat') ->
       let cs_ctx = collect_ret filename prog5 cs_ctx cs ret in
       let cs_ctx, cs = collect_lat filename prog5 cs_ctx cs lat' in
-      (cs_ctx, of_ret x ret @ cs)
+      (cs_ctx, of_ret prog5 x ret @ cs)
     | Constraint (lc, _, lat') ->
       let cs_ctx, cs = collect_lat filename prog5 cs_ctx cs lat' in
       (cs_ctx, Logical lc :: cs)
-    | I _ -> (cs_ctx, [])
+    | I _ -> (cs_ctx, cs)
 
 
   let rec collect_at
@@ -320,7 +321,7 @@ module Collect = struct
     | Computational ((x, bt), _, at') ->
       let ty_ctx, res = collect_at filename prog5 cs_ctx cs at' in
       ((x, bt) :: ty_ctx, res)
-    | L lat -> ([], collect_lat filename prog5 cs_ctx [] lat)
+    | L lat -> ([], collect_lat filename prog5 cs_ctx cs lat)
 
 
   let collect_spec
@@ -332,7 +333,7 @@ module Collect = struct
     : constraint_context
     =
     let ty_ctx, (cs_ctx, cs) = collect_at filename prog5 cs_ctx [] at in
-    (fsym, CD { fn = filename; name = fsym; iargs = ty_ctx; oarg = Unit; def = Spec cs })
+    (fsym, CD { fn = filename; name = fsym; iargs = ty_ctx; oarg = None; def = Spec cs })
     :: cs_ctx
 
 

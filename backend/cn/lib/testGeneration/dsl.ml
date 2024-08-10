@@ -28,7 +28,7 @@ let rec pp_gen_term (gt : gen_term) : Pp.document =
     ^^ space
     ^^ rparen
   | GT (tys, Call (fsym, its)) ->
-    Sym.pp_debug fsym
+    Sym.pp fsym
     ^^ string "<"
     ^^ GT.pp_base_type tys
     ^^ string ">"
@@ -59,7 +59,7 @@ let rec pp_gen (g : gen) : Pp.document =
     ^^ pp_gen g'
   | Let (xs, gt, g') ->
     string "let "
-    ^^ separate_map (comma ^^ space) Sym.pp_debug xs
+    ^^ separate_map (comma ^^ space) Sym.pp xs
     ^^ string " = "
     ^^ pp_gen_term gt
     ^^ semi
@@ -86,8 +86,8 @@ let rec pp_gen (g : gen) : Pp.document =
 
 type gen_def =
   { name : Sym.t;
-    args : (Sym.t * GT.base_type) list;
-    rets : GT.base_type list;
+    iargs : (Sym.t * GT.base_type) list;
+    oargs : GT.base_type list;
     body : gen option
   }
 
@@ -96,14 +96,14 @@ let pp_gen_def (gd : gen_def) : Pp.document =
   group
     (string "generator"
      ^^ space
-     ^^ parens (separate_map (comma ^^ space) GT.pp_base_type gd.rets)
+     ^^ parens (separate_map (comma ^^ space) GT.pp_base_type gd.oargs)
      ^^ space
-     ^^ Sym.pp_debug gd.name
+     ^^ Sym.pp gd.name
      ^^ parens
           (separate_map
              (comma ^^ space)
-             (fun (x, ty) -> GT.pp_base_type ty ^^ space ^^ Sym.pp_debug x)
-             gd.args)
+             (fun (x, ty) -> GT.pp_base_type ty ^^ space ^^ Sym.pp x)
+             gd.iargs)
      ^^
      match gd.body with
      | Some body ->
@@ -137,8 +137,8 @@ let alloc_ (it : IT.t) : gen_term = GT (GT.of_bt (IT.bt it), Alloc it)
 
 (** Call a defined generator named [fsym] with arguments [gts], from context [gtx] *)
 let call_ (gtx : gen_context) (fsym : Sym.t) (its : IT.t list) : gen_term =
-  let { rets; _ } = List.assoc Sym.equal fsym gtx in
-  GT (Tuple rets, Call (fsym, its))
+  let { oargs; _ } = List.assoc Sym.equal fsym gtx in
+  GT (Tuple oargs, Call (fsym, its))
 
 
 module Compile = struct
@@ -177,7 +177,7 @@ module Compile = struct
         let vertex_name (x, bt) =
           let doc =
             let open Pp in
-            Sym.pp_debug x ^^ space ^^ colon ^^ space ^^ BT.pp bt
+            Sym.pp x ^^ space ^^ colon ^^ space ^^ BT.pp bt
           in
           Pp.plain doc
 
@@ -188,7 +188,34 @@ module Compile = struct
       end)
 
     (** Build a dependency graph of all the variables in [cs] *)
-    let construct_graph (cs : constraints) : G.t =
+    let construct_graph (args : (Sym.t * BT.t) list) (cs : constraints) : G.t =
+      (* Add vertices *)
+      let g = List.fold_left (fun g x -> G.add_vertex g x) G.empty args in
+      let g =
+        List.fold_left
+          (fun g c ->
+            match c with
+            | Ownership { pointer; x; ty } ->
+              G.add_vertex
+                (G.add_vertex
+                   g
+                   ( x,
+                     BT.of_sct
+                       Memory.is_signed_integer_type
+                       Memory.size_of_integer_type
+                       ty ))
+                (pointer, Loc)
+            | Logical lc ->
+              LC.SymMap.fold
+                (fun x bt g -> G.add_vertex g (x, bt))
+                (LC.free_vars_bts lc)
+                g
+            | Predicate { name = _; iargs; oarg } ->
+              let g = List.fold_left (fun g y -> G.add_vertex g y) g iargs in
+              G.add_vertex g oarg)
+          g
+          cs
+      in
       let g =
         List.fold_left
           (fun g c ->
@@ -209,20 +236,23 @@ module Compile = struct
                            (Option.is_some (IT.is_sym it2)) ->
                  (match (it1, it2) with
                   | IT (Sym x, x_bt, _), it | it, IT (Sym x, x_bt, _) ->
-                    List.fold_left
-                      (fun g y -> G.add_edge_e g (y, (x, x_bt)))
+                    IT.SymMap.fold
+                      (fun y y_bt g -> G.add_edge_e g ((y, y_bt), (x, x_bt)))
+                      (IT.free_vars_bts it)
                       g
-                      (it |> IT.free_vars_bts |> IT.SymMap.bindings)
                   | _ -> failwith ("unreachable (" ^ __LOC__ ^ ")"))
                | _ ->
-                 let free_vars_bts = LC.free_vars_bts lc |> LC.SymMap.bindings in
-                 List.fold_left
-                   (fun g x ->
-                     List.fold_left (fun g y -> G.add_edge_e g (x, y)) g free_vars_bts)
-                   g
-                   free_vars_bts)
+                 let free_vars_bts = LC.free_vars_bts lc in
+                 LC.SymMap.fold
+                   (fun x x_bt g ->
+                     LC.SymMap.fold
+                       (fun y y_bt g -> G.add_edge_e g ((x, x_bt), (y, y_bt)))
+                       free_vars_bts
+                       g)
+                   free_vars_bts
+                   g)
             | Predicate _ -> g)
-          G.empty
+          g
           cs
       in
       Pp.debug
@@ -230,9 +260,7 @@ module Compile = struct
         (lazy
           (let buf = Buffer.create 50 in
            Dot.fprint_graph (Format.formatter_of_buffer buf) g;
-           let str = Buffer.contents buf in
-           Buffer.clear buf;
-           Pp.string str));
+           Pp.string (Buffer.contents buf)));
       g
 
 
@@ -240,59 +268,88 @@ module Compile = struct
       let open Pp in
       let rec aux (elem : G.vertex Graph.WeakTopological.element) : document =
         match elem with
-        | Vertex (x, bt) -> Sym.pp_debug x ^^ space ^^ colon ^^ space ^^ BT.pp bt
+        | Vertex (x, bt) -> Sym.pp x ^^ space ^^ colon ^^ space ^^ BT.pp bt
         | Component ((x, bt), elems) ->
           lbrace
-          ^^ parens (Sym.pp_debug x ^^ space ^^ colon ^^ space ^^ BT.pp bt)
+          ^^ parens (Sym.pp x ^^ space ^^ colon ^^ space ^^ BT.pp bt)
           ^^ Graph.WeakTopological.fold_left
                (fun acc elem -> acc ^^ space ^^ aux elem)
                empty
                elems
           ^^ rbrace
       in
-      Graph.WeakTopological.fold_left (fun acc elem -> acc @ [ aux elem ]) [] ho
-      |> separate space
+      surround_separate
+        2
+        1
+        (lbracket ^^ rbracket)
+        lbracket
+        (semi ^^ break 1)
+        rbracket
+        (Graph.WeakTopological.fold_left (fun acc elem -> acc @ [ aux elem ]) [] ho)
 
 
-    (** Get a hierarchical ordering for generation *)
-    let weak_topo_graph (g : G.t) : G.vertex Graph.WeakTopological.t =
-      let root =
-        G.fold_vertex
-          (fun v ores ->
-            match ores with None when G.in_degree g v = 0 -> Some v | _ -> None)
-          g
-          None
-        |> Option.value ~default:(Choose.choose_vertex g)
+    (** Get hierarchical orderings for generation *)
+    let weak_topo_graphs (g : G.t) : G.vertex Graph.WeakTopological.t list =
+      let rec aux g hos =
+        if G.is_empty g then
+          hos
+        else (
+          let root =
+            G.fold_vertex
+              (fun v ores ->
+                match ores with None when G.in_degree g v = 0 -> Some v | _ -> None)
+              g
+              None
+            |> Option.value ~default:(Choose.choose_vertex g)
+          in
+          let ho = WeakTopological.recursive_scc g root in
+          Pp.debug
+            1
+            (lazy
+              (let open Pp in
+               string "Weak topological sort" ^^ space ^^ pp_weak_topological ho));
+          let rec aux' (g' : G.t) (elem : G.vertex Graph.WeakTopological.element) : G.t =
+            match elem with
+            | Vertex x -> G.remove_vertex g' x
+            | Component (x, elems) ->
+              Graph.WeakTopological.fold_left aux' (G.remove_vertex g' x) elems
+          in
+          let g = Graph.WeakTopological.fold_left aux' g ho in
+          aux g (ho :: hos))
       in
-      let ho = WeakTopological.recursive_scc g root in
-      Pp.debug 1 (lazy (pp_weak_topological ho));
-      ho
+      aux g []
 
 
     (** Choose an optimal linear ordering from a hierarchical ordering
         FIXME: Currently just selects arbitrary one, maybe wait on Leo's work?
         **)
     let choose_ordering (ho : G.vertex Graph.WeakTopological.t) : G.vertex list =
-      let rec aux (elem : G.vertex Graph.WeakTopological.element) : G.vertex list =
+      let rec aux (acc : G.vertex list) (elem : G.vertex Graph.WeakTopological.element)
+        : G.vertex list
+        =
         match elem with
-        | Vertex x -> [ x ]
-        | Component (x, elems) ->
-          x :: Graph.WeakTopological.fold_left (fun acc elem -> aux elem @ acc) [] elems
+        | Vertex x -> x :: acc
+        | Component (x, elems) -> x :: Graph.WeakTopological.fold_left aux [] elems
       in
-      List.rev (Graph.WeakTopological.fold_left (fun acc elem -> aux elem @ acc) [] ho)
+      List.rev (Graph.WeakTopological.fold_left aux [] ho)
 
 
-    let select (cs : constraints) : G.vertex list =
-      cs |> construct_graph |> weak_topo_graph |> choose_ordering
+    let select (args : (Sym.t * BT.t) list) (cs : constraints) : G.vertex list =
+      construct_graph args cs
+      |> weak_topo_graphs
+      |> List.map choose_ordering
+      |> List.flatten
   end
 
   let rec get_dummy_context (cs_ctx : Constraints.t) : gen_context =
     match cs_ctx with
-    | (name, CD { iargs; oarg; _ }) :: cs_ctx' ->
+    | (name, CD { fn = _; name = _; iargs; oarg; def = _ }) :: cs_ctx' ->
       ( name,
         { name;
-          args = [];
-          rets = GT.of_bt oarg :: List.map (fun (_, bt) -> GT.of_bt bt) iargs;
+          iargs = [];
+          oargs =
+            (let l = List.map (fun (_, bt) -> GT.of_bt bt) iargs in
+             match oarg with Some oarg -> GT.of_bt oarg :: l | None -> l);
           body = None
         } )
       :: get_dummy_context cs_ctx'
@@ -315,19 +372,23 @@ module Compile = struct
           match c with Logical lc -> lc | _ -> failwith ("unreachable (" ^ __LOC__ ^ ")"))
         logical_cs
     in
-    let g = if List.is_empty lcs then g else Assert (lcs, g) in
+    let g_assert g' = if List.is_empty lcs then g else Assert (lcs, g') in
     match resource_cs with
     | _ :: _ :: _ ->
       Cerb_debug.error "todo: multiple resource constraints are not supported"
     | [ Ownership { pointer; x = x'; ty } ] ->
       let here = Cerb_location.other __FUNCTION__ in
       let bt' = BT.of_sct Memory.is_signed_integer_type Memory.size_of_integer_type ty in
-      Asgn
-        ( (IT.sym_ (pointer, BT.Loc, here), GT.Loc (GT.of_sct ty)),
-          IT.sym_ (x', bt', here),
-          g )
-    | [ Predicate { name; iargs; x = x' } ] -> Let (x' :: iargs, call_ gtx name [], g)
-    | [] -> Let ([ x ], arbitrary_ (GT.of_bt bt), g)
+      let g_assign =
+        Asgn
+          ( (IT.sym_ (pointer, BT.Loc, here), GT.Loc (GT.of_sct ty)),
+            IT.sym_ (x', bt', here),
+            g )
+      in
+      Let ([ x ], arbitrary_ (GT.of_bt bt), g_assert g_assign)
+    | [ Predicate { name; iargs; oarg } ] ->
+      Let (List.map fst (oarg :: iargs), call_ gtx name [], g)
+    | [] -> Let ([ x ], arbitrary_ (GT.of_bt bt), g_assert g)
     | [ Logical _ ] -> failwith ("unreachable (" ^ __LOC__ ^ ")")
 
 
@@ -341,11 +402,28 @@ module Compile = struct
     let rec aux (o : Order.G.vertex list) (cs : constraints) : gen =
       match o with
       | (x, bt) :: o' ->
+        Pp.debug
+          1
+          (lazy
+            (let open Pp in
+             string "Compiling variable `" ^^ Sym.pp x ^^ string "`"));
         let predicate_cs, remaining_cs =
           List.partition
             (fun c ->
               match c with
-              | Predicate { iargs; _ } -> List.exists (fun x' -> Sym.equal x x') iargs
+              | Predicate { name = _; iargs; oarg } ->
+                let relevant =
+                  List.exists (fun (x', _) -> Sym.equal x x') (oarg :: iargs)
+                in
+                if relevant then (
+                  Pp.debug
+                    1
+                    (lazy
+                      (let open Pp in
+                       string "Eliminating constraints: " ^^ Constraints.pp_constraint c));
+                  true)
+                else
+                  false
               | Ownership _ | Logical _ -> false)
             cs
         in
@@ -356,7 +434,21 @@ module Compile = struct
             List.fold_left
               (fun acc c ->
                 match c with
-                | Predicate { iargs; _ } -> LC.SymSet.union (LC.SymSet.of_list iargs) acc
+                | Predicate { name = _; iargs; oarg } ->
+                  let more =
+                    LC.SymSet.diff (LC.SymSet.of_list (List.map fst (oarg :: iargs))) acc
+                  in
+                  LC.SymSet.iter
+                    (fun x ->
+                      Pp.debug
+                        1
+                        (lazy
+                          (let open Pp in
+                           string "Implicitly compiling variable `"
+                           ^^ Sym.pp x
+                           ^^ string "`")))
+                    more;
+                  LC.SymSet.union more acc
                 | Ownership _ | Logical _ -> failwith ("unreachable (" ^ __LOC__ ^ ")"))
               (LC.SymSet.singleton x)
               predicate_cs
@@ -366,14 +458,35 @@ module Compile = struct
           List.partition
             (fun c ->
               match c with
-              | Ownership { x; _ } -> LC.SymSet.mem x xs_generated
+              | Ownership { pointer = _; x; ty = _ } ->
+                let relevant = LC.SymSet.mem x xs_generated in
+                if relevant then (
+                  Pp.debug
+                    1
+                    (lazy
+                      (let open Pp in
+                       string "Eliminating constraints: " ^^ Constraints.pp_constraint c));
+                  true)
+                else
+                  false
               | Logical lc ->
-                LC.SymSet.subset
-                  (LC.SymSet.filter
-                     (fun x -> List.mem (fun _ (x', _) -> Sym.equal x x') x o')
-                     (LC.free_vars lc))
-                  xs_generated
-              | Predicate _ -> failwith ("unreachable (" ^ __LOC__ ^ ")"))
+                let relevant =
+                  LC.SymSet.subset
+                    (LC.SymSet.filter
+                       (fun x -> List.mem (fun _ (x', _) -> Sym.equal x x') x o')
+                       (LC.free_vars lc))
+                    xs_generated
+                in
+                if relevant then (
+                  Pp.debug
+                    1
+                    (lazy
+                      (let open Pp in
+                       string "Eliminating constraints: " ^^ Constraints.pp_constraint c));
+                  true)
+                else
+                  false
+              | Predicate _ -> false)
             remaining_cs
         in
         compile_gen_term gtx (x, bt) (predicate_cs @ primitive_cs) (aux o' remaining_cs)
@@ -387,7 +500,7 @@ module Compile = struct
           failwith
             ("Constraints remaining: " ^ (cs |> Constraints.pp_constraints |> Pp.plain))
     in
-    aux (Order.select cs) cs
+    aux (Order.select iargs cs) cs
 
 
   let rec compile_clauses
@@ -397,28 +510,55 @@ module Compile = struct
     : gen
     =
     match cls with
-    | [ cl ] when IT.is_true cl.guard -> compile_gen_terms gtx iargs cl.cs (Some cl.it)
+    | [ cl ] when IT.is_true cl.guard ->
+      Pp.debug 1 (lazy (Pp.string "Compiling `else` clause"));
+      compile_gen_terms gtx iargs cl.cs (Some cl.it)
     | cl :: cls' ->
-      ITE
-        ( cl.guard,
-          compile_gen_terms gtx iargs cl.cs (Some cl.it),
-          compile_clauses gtx iargs cls' )
+      Pp.debug
+        1
+        (lazy
+          (let open Pp in
+           string "Compiling clause"
+           ^^ space
+           ^^ parens (string "guard: " ^^ IT.pp cl.guard)));
+      let here = Locations.other __FUNCTION__ in
+      let x_sym, it_x = IT.fresh BT.Bool here in
+      Let
+        ( [ x_sym ],
+          arbitrary_ GT.Bool,
+          ITE
+            ( it_x,
+              compile_gen_terms gtx iargs cl.cs (Some cl.it),
+              compile_clauses gtx iargs cls' ) )
     | [] -> failwith ("unreachable (" ^ __LOC__ ^ ")")
 
 
   let compile_gen
     (gtx : gen_context)
-    (CD { fn = _; name; def; iargs; oarg } : constraint_definition)
+    (CD { fn; name; def; iargs; oarg } : constraint_definition)
     : gen_def
     =
+    Pp.debug
+      1
+      (lazy
+        (let open Pp in
+         string "Compiling generator for"
+         ^^ space
+         ^^ Sym.pp name
+         ^^ space
+         ^^ at
+         ^^ space
+         ^^ string fn));
     let g =
       match def with
       | Pred cls -> compile_clauses gtx iargs cls
       | Spec cs -> compile_gen_terms gtx iargs cs None
     in
     { name;
-      args = [];
-      rets = GT.of_bt oarg :: List.map (fun (_, bt) -> GT.of_bt bt) iargs;
+      iargs = [];
+      oargs =
+        (let l = List.map (fun (_, bt) -> GT.of_bt bt) iargs in
+         match oarg with Some oarg -> GT.of_bt oarg :: l | None -> l);
       body = Some g
     }
 

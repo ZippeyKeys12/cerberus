@@ -14,8 +14,8 @@ type constraint_ =
   | Logical of LC.t
   | Predicate of
       { name : Sym.t;
-        iargs : Sym.t list;
-        x : Sym.t
+        iargs : (Sym.t * BT.t) list;
+        oarg : Sym.t * BT.t
       }
 
 val pp_constraint : constraint_ -> Pp.document
@@ -41,7 +41,7 @@ and constraint_definition =
       { fn : string; (** File this definition came from *)
         name : Sym.t;
         iargs : (Sym.t * BT.t) list;
-        oarg : BT.t;
+        oarg : BT.t option;
         def : constraint_definition_
       }
 
