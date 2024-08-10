@@ -4,6 +4,8 @@ module LC = LogicalConstraints
 open Constraints
 open Utils
 module CF = Cerb_frontend
+module SymMap = Map.Make (Sym)
+module SymSet = Set.Make (Sym)
 
 type gen_term_ =
   | Arbitrary
@@ -84,6 +86,15 @@ let rec pp_gen (g : gen) : Pp.document =
     ^^ braces (nest 2 (break 1 ^^ pp_gen g_else) ^^ break 1)
 
 
+let map_gen (f : gen -> gen) (g : gen) : gen =
+  match g with
+  | Asgn ((it_addr, gt), it_val, g') -> Asgn ((it_addr, gt), it_val, f g')
+  | Let (xs, gt, g') -> Let (xs, gt, f g')
+  | Return _ -> g
+  | Assert (lcs, g') -> Assert (lcs, f g')
+  | ITE (it, g_then, g_else) -> ITE (it, f g_then, f g_else)
+
+
 type gen_def =
   { name : Sym.t;
     iargs : (Sym.t * GT.base_type) list;
@@ -161,7 +172,6 @@ module Compile = struct
     module G = Graph.Persistent.Digraph.Concrete (Pair)
     module Components = Graph.Components.Undirected (G)
     module WeakTopological = Graph.WeakTopological.Make (G)
-    module Choose = Graph.Oper.Choose (G)
 
     module Dot = Graph.Graphviz.Dot (struct
         include G (* use the graph module from above *)
@@ -206,10 +216,7 @@ module Compile = struct
                        ty ))
                 (pointer, Loc)
             | Logical lc ->
-              LC.SymMap.fold
-                (fun x bt g -> G.add_vertex g (x, bt))
-                (LC.free_vars_bts lc)
-                g
+              SymMap.fold (fun x bt g -> G.add_vertex g (x, bt)) (LC.free_vars_bts lc) g
             | Predicate { name = _; iargs; oarg } ->
               let g = List.fold_left (fun g y -> G.add_vertex g y) g iargs in
               G.add_vertex g oarg)
@@ -236,16 +243,21 @@ module Compile = struct
                            (Option.is_some (IT.is_sym it2)) ->
                  (match (it1, it2) with
                   | IT (Sym x, x_bt, _), it | it, IT (Sym x, x_bt, _) ->
+                    let struct_indirection_hack = Option.is_some @@ IT.is_member it in
                     IT.SymMap.fold
-                      (fun y y_bt g -> G.add_edge_e g ((y, y_bt), (x, x_bt)))
+                      (fun y y_bt g ->
+                        if struct_indirection_hack then
+                          G.add_edge_e g ((x, x_bt), (y, y_bt))
+                        else
+                          G.add_edge_e g ((y, y_bt), (x, x_bt)))
                       (IT.free_vars_bts it)
                       g
                   | _ -> failwith ("unreachable (" ^ __LOC__ ^ ")"))
                | _ ->
                  let free_vars_bts = LC.free_vars_bts lc in
-                 LC.SymMap.fold
+                 SymMap.fold
                    (fun x x_bt g ->
-                     LC.SymMap.fold
+                     SymMap.fold
                        (fun y y_bt g -> G.add_edge_e g ((x, x_bt), (y, y_bt)))
                        free_vars_bts
                        g)
@@ -270,13 +282,14 @@ module Compile = struct
         match elem with
         | Vertex (x, bt) -> Sym.pp x ^^ space ^^ colon ^^ space ^^ BT.pp bt
         | Component ((x, bt), elems) ->
-          lbrace
-          ^^ parens (Sym.pp x ^^ space ^^ colon ^^ space ^^ BT.pp bt)
-          ^^ Graph.WeakTopological.fold_left
-               (fun acc elem -> acc ^^ space ^^ aux elem)
-               empty
-               elems
-          ^^ rbrace
+          parens
+            ((Sym.pp x ^^ space ^^ colon ^^ space ^^ BT.pp bt)
+             ^^ semi
+             ^^ break 1
+             ^^ Graph.WeakTopological.fold_left
+                  (fun acc elem -> acc ^^ space ^^ aux elem)
+                  empty
+                  elems)
       in
       surround_separate
         2
@@ -293,7 +306,8 @@ module Compile = struct
       let rec aux g hos =
         if G.is_empty g then
           hos
-        else (
+        else
+          let module Choose = Graph.Oper.Choose (G) in
           let root =
             G.fold_vertex
               (fun v ores ->
@@ -315,7 +329,7 @@ module Compile = struct
               Graph.WeakTopological.fold_left aux' (G.remove_vertex g' x) elems
           in
           let g = Graph.WeakTopological.fold_left aux' g ho in
-          aux g (ho :: hos))
+          aux g (ho :: hos)
       in
       aux g []
 
@@ -392,6 +406,28 @@ module Compile = struct
     | [ Logical _ ] -> failwith ("unreachable (" ^ __LOC__ ^ ")")
 
 
+  let get_constraint_to_elim (o : Order.G.vertex list) (xs : SymSet.t) (c : constraint_) =
+    let relevant =
+      match c with
+      | Ownership { pointer = _; x; ty = _ } -> SymSet.mem x xs
+      | Logical lc ->
+        SymSet.subset
+          (SymSet.inter (SymSet.of_list (List.map fst o)) (LC.free_vars lc))
+          xs
+      | Predicate { name = _; iargs; oarg } ->
+        List.exists (fun (x', _) -> SymSet.mem x' xs) (oarg :: iargs)
+    in
+    if relevant then (
+      Pp.debug
+        1
+        (lazy
+          (let open Pp in
+           string "Eliminating constraints: " ^^ Constraints.pp_constraint c));
+      true)
+    else
+      false
+
+
   let compile_gen_terms
     (gtx : gen_context)
     (iargs : Order.G.vertex list)
@@ -411,34 +447,22 @@ module Compile = struct
           List.partition
             (fun c ->
               match c with
-              | Predicate { name = _; iargs; oarg } ->
-                let relevant =
-                  List.exists (fun (x', _) -> Sym.equal x x') (oarg :: iargs)
-                in
-                if relevant then (
-                  Pp.debug
-                    1
-                    (lazy
-                      (let open Pp in
-                       string "Eliminating constraints: " ^^ Constraints.pp_constraint c));
-                  true)
-                else
-                  false
+              | Predicate _ -> get_constraint_to_elim o' (SymSet.singleton x) c
               | Ownership _ | Logical _ -> false)
             cs
         in
         let xs_generated =
           if List.is_empty predicate_cs then
-            LC.SymSet.singleton x
+            SymSet.singleton x
           else
             List.fold_left
               (fun acc c ->
                 match c with
                 | Predicate { name = _; iargs; oarg } ->
                   let more =
-                    LC.SymSet.diff (LC.SymSet.of_list (List.map fst (oarg :: iargs))) acc
+                    SymSet.diff (SymSet.of_list (List.map fst (oarg :: iargs))) acc
                   in
-                  LC.SymSet.iter
+                  SymSet.iter
                     (fun x ->
                       Pp.debug
                         1
@@ -448,44 +472,17 @@ module Compile = struct
                            ^^ Sym.pp x
                            ^^ string "`")))
                     more;
-                  LC.SymSet.union more acc
+                  SymSet.union more acc
                 | Ownership _ | Logical _ -> failwith ("unreachable (" ^ __LOC__ ^ ")"))
-              (LC.SymSet.singleton x)
+              (SymSet.singleton x)
               predicate_cs
         in
-        let o' = List.filter (fun (x, _) -> not (LC.SymSet.mem x xs_generated)) o' in
+        let o' = List.filter (fun (x, _) -> not (SymSet.mem x xs_generated)) o' in
         let primitive_cs, remaining_cs =
           List.partition
             (fun c ->
               match c with
-              | Ownership { pointer = _; x; ty = _ } ->
-                let relevant = LC.SymSet.mem x xs_generated in
-                if relevant then (
-                  Pp.debug
-                    1
-                    (lazy
-                      (let open Pp in
-                       string "Eliminating constraints: " ^^ Constraints.pp_constraint c));
-                  true)
-                else
-                  false
-              | Logical lc ->
-                let relevant =
-                  LC.SymSet.subset
-                    (LC.SymSet.filter
-                       (fun x -> List.mem (fun _ (x', _) -> Sym.equal x x') x o')
-                       (LC.free_vars lc))
-                    xs_generated
-                in
-                if relevant then (
-                  Pp.debug
-                    1
-                    (lazy
-                      (let open Pp in
-                       string "Eliminating constraints: " ^^ Constraints.pp_constraint c));
-                  true)
-                else
-                  false
+              | Ownership _ | Logical _ -> get_constraint_to_elim o' xs_generated c
               | Predicate _ -> false)
             remaining_cs
         in
@@ -572,7 +569,50 @@ end
 let compile = Compile.compile
 
 module Optimize = struct
-  let optimize (gtx : gen_context) : gen_context = gtx
+  module BespokeGenerators = struct
+    let rec equality_constraints (g : gen) : gen =
+      match g with
+      | Let ([ x ], GT (gt, Arbitrary), Assert (lcs, g')) ->
+        (* Find applicable constraints *)
+        let lcs_eq, lcs_rest =
+          List.partition
+            (fun lc ->
+              match lc with
+              | LC.T (IT (Binop (EQ, IT (Sym x', _, _), _), _, _))
+              | LC.T (IT (Binop (EQ, _, IT (Sym x', _, _)), _, _)) ->
+                Sym.equal x x'
+              | _ -> false)
+            lcs
+        in
+        (* The optimization itself *)
+        let optimize (it : IT.t) (lcs' : LC.t list) =
+          let lc_rest = if List.is_empty lcs' then lcs_rest else lcs' @ lcs_rest in
+          let g' = if List.is_empty lc_rest then g' else Assert (lcs_rest, g') in
+          Let ([ x ], GT (gt, Just it), g')
+        in
+        (match lcs_eq with
+         | LC.T (IT (Binop (EQ, IT (Sym x', _, _), it), _, _)) :: lcs_eq'
+           when Sym.equal x x' ->
+           optimize it lcs_eq'
+         | LC.T (IT (Binop (EQ, it, IT (Sym x', _, _)), _, _)) :: lcs_eq'
+           when Sym.equal x x' ->
+           optimize it lcs_eq'
+         | _ :: _ -> failwith ("unreachable (" ^ __LOC__ ^ ")")
+         | [] ->
+           Let ([ x ], GT (gt, Arbitrary), Assert (lcs, map_gen equality_constraints g')))
+      | _ -> map_gen equality_constraints g
+
+
+    let run (g : gen) : gen = g |> equality_constraints
+  end
+
+  let optimize_gen (g : gen) : gen = g |> BespokeGenerators.run
+
+  let optimize_gen_def ({ name; iargs; oargs; body } : gen_def) : gen_def =
+    { name; iargs; oargs; body = Option.map optimize_gen body }
+
+
+  let optimize (gtx : gen_context) : gen_context = List.map_snd optimize_gen_def gtx
 end
 
 let optimize = Optimize.optimize
