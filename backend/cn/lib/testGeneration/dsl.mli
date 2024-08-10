@@ -6,17 +6,15 @@ module CF = Cerb_frontend
 type gen_term_ =
   | Arbitrary
   | Just of IT.t
-  | Filter of gen_term * (Sym.t * LC.t list)
-  | Map of gen_term * (Sym.t * IT.t)
-  | Alloc of gen_term
-  | Call of Sym.t * gen_term list
+  | Alloc of IT.t
+  | Call of Sym.t * IT.t list
 
 and gen_term = GT of GT.base_type * gen_term_
 
 val pp_gen_term : gen_term -> Pp.document
 
 type gen =
-  | Asgn of IT.t * IT.t * gen
+  | Asgn of (IT.t * GT.base_type) * IT.t * gen
   | Let of Sym.t list * gen_term * gen
   | Return of IT.t
   | Assert of LC.t list * gen

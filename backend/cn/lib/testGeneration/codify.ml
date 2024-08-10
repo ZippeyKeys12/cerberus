@@ -92,31 +92,11 @@ let rec codify_gen_term (gt : gen_term) : string =
   | GT (tys, Arbitrary) -> "rc::gen::arbitrary<" ^ codify_base_type tys ^ ">()"
   | GT (tys, Just it) ->
     "rc::gen::just<" ^ codify_base_type tys ^ ">(" ^ codify_it it ^ ")"
-  | GT (tys, Filter (gt', (x, _lcs))) ->
-    "rc::gen::suchThat("
-    ^ codify_gen_term gt'
-    ^ ", [=]("
-    ^ codify_base_type tys
-    ^ " "
-    ^ codify_sym x
-    ^ "){ return "
-    ^ failwith "codify lcs"
-    ^ "; })"
-  | GT (tys, Map (gt', (x, it))) ->
-    "rc::gen::map("
-    ^ codify_gen_term gt'
-    ^ ", [=]("
-    ^ codify_base_type tys
-    ^ " "
-    ^ codify_sym x
-    ^ "){ return "
-    ^ codify_it it
-    ^ "; })"
-  | GT (tys, Alloc gt') ->
+  | GT (tys, Alloc it) ->
     let sym = Sym.fresh () in
     let ty' = match tys with Loc ty -> ty | _ -> failwith "invalid" in
     "rc::gen::map("
-    ^ codify_gen_term gt'
+    ^ codify_it it
     ^ ", [=]("
     ^ codify_base_type ty'
     ^ " "
@@ -134,8 +114,10 @@ let rec codify_gen_term (gt : gen_term) : string =
 let rec codify_gen (g : gen) : Pp.document =
   let open Pp in
   match g with
-  | Asgn (it_addr, it_val, g') ->
-    star
+  | Asgn ((it_addr, gt), it_val, g') ->
+    space
+    ^^ star
+    ^^ parens (string (codify_base_type gt))
     ^^ parens (IT.pp it_addr)
     ^^ space
     ^^ equals

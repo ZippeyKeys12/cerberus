@@ -5,19 +5,22 @@ module LC = LogicalConstraints
 module LAT = LogicalArgumentTypes
 module CF = Cerb_frontend
 
-type resource_constraint = Sym.t * RET.t
+type constraint_ =
+  | Ownership of
+      { pointer : Sym.t;
+        x : Sym.t;
+        ty : Sctypes.t
+      }
+  | Logical of LC.t
+  | Predicate of
+      { name : Sym.t;
+        iargs : Sym.t list;
+        x : Sym.t
+      }
 
-val pp_resource_constraint : resource_constraint -> Pp.document
+val pp_constraint : constraint_ -> Pp.document
 
-type resource_constraints = resource_constraint list
-
-val pp_resource_constraints : resource_constraints -> Pp.document
-
-type logical_constraints = LC.t list
-
-val pp_logical_constraints : logical_constraints -> Pp.document
-
-type constraints = resource_constraints * logical_constraints
+type constraints = constraint_ list
 
 val pp_constraints : constraints -> Pp.document
 

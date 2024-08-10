@@ -41,8 +41,15 @@ let rec of_bt (bt : BT.t) : base_type =
 
 
 let rec of_sct = function
-  | Sctypes.Pointer ty -> Loc (of_sct ty)
-  | ty -> of_bt (BT.of_sct Memory.is_signed_integer_type Memory.size_of_integer_type ty)
+  | Sctypes.Void -> Unit
+  | Integer ity ->
+    Bits
+      ( (if Memory.is_signed_integer_type ity then Signed else Unsigned),
+        Memory.size_of_integer_type ity * 8 )
+  | Array (sct, _) -> Map (of_sct Sctypes.(Integer (Unsigned Intptr_t)), of_sct sct)
+  | Pointer ty -> Loc (of_sct ty)
+  | Struct tag -> Struct tag
+  | Function _ -> Cerb_debug.error "todo: function types"
 
 
 let rec pp_base_type =

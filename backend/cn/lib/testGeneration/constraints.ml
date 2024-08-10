@@ -8,43 +8,65 @@ module LC = LogicalConstraints
 module LAT = LogicalArgumentTypes
 module CF = Cerb_frontend
 
-type resource_constraint = Sym.t * RET.t
+type constraint_ =
+  | Ownership of
+      { pointer : Sym.t;
+        x : Sym.t;
+        ty : Sctypes.t
+      }
+  | Logical of LC.t
+  | Predicate of
+      { name : Sym.t;
+        iargs : Sym.t list;
+        x : Sym.t
+      }
 
-let pp_resource_constraint ((x, ret) : resource_constraint) : Pp.document =
+let pp_constraint (c : constraint_) : Pp.document =
   let open Pp in
-  string "(" ^^ Sym.pp x ^^ string ", " ^^ RET.pp ret
+  match c with
+  | Ownership { pointer; x; ty } ->
+    string "take"
+    ^^ space
+    ^^ Sym.pp x
+    ^^ space
+    ^^ equals
+    ^^ space
+    ^^ string "Owned"
+    ^^ angles (Sctypes.pp ty)
+    ^^ parens (Sym.pp pointer)
+  | Logical lc -> string "assert" ^^ parens (LC.pp lc)
+  | Predicate { name; iargs; x } ->
+    string "take"
+    ^^ space
+    ^^ Sym.pp x
+    ^^ space
+    ^^ equals
+    ^^ space
+    ^^ Sym.pp name
+    ^^ surround_separate_map
+         2
+         1
+         (string "()")
+         lparen
+         (comma ^^ break 1)
+         rparen
+         Sym.pp
+         iargs
 
 
-type resource_constraints = resource_constraint list
+type constraints = constraint_ list
 
-let pp_resource_constraints (rcs : resource_constraints) : Pp.document =
+let pp_constraints (cs : constraints) : Pp.document =
   let open Pp in
-  lbrace
-  ^^ nest 2 (break 1 ^^ separate_map (semi ^^ break 1) pp_resource_constraint rcs)
-  ^^ break 1
-  ^^ rbrace
-
-
-type logical_constraints = LC.t list
-
-let pp_logical_constraints (lcs : logical_constraints) : Pp.document =
-  let open Pp in
-  lbrace
-  ^^ nest 2 (break 1 ^^ separate_map (semi ^^ break 1) LC.pp lcs)
-  ^^ break 1
-  ^^ rbrace
-
-
-type constraints = resource_constraints * logical_constraints
-
-let pp_constraints ((rcs, lcs) : constraints) : Pp.document =
-  let open Pp in
-  string "Resource Constraints: "
-  ^^ pp_resource_constraints rcs
-  ^^ semi
-  ^^ break 1
-  ^^ string "Logical Constraints: "
-  ^^ pp_logical_constraints lcs
+  surround_separate_map
+    2
+    1
+    (string "[]")
+    lbracket
+    (comma ^^ break 1)
+    rbracket
+    pp_constraint
+    cs
 
 
 type clause =
@@ -153,18 +175,45 @@ type t = constraint_context
 let pp = pp_constraint_context
 
 module Collect = struct
+  let add_indirection (it : IT.t) : Sym.t * constraint_ option =
+    match IT.is_sym it with
+    | Some (x, _) -> (x, None)
+    | None ->
+      let here = Locations.other __FUNCTION__ in
+      let sym, it' = IT.fresh (IT.bt it) here in
+      (sym, Some (Logical (T (IT.eq_ (it, it') here))))
+
+
+  let of_ret (x : Sym.t) (ret : RET.t) : constraints =
+    match ret with
+    | P { name = RET.Owned (ty, _); pointer = it; iargs = _ } ->
+      let pointer, oc = add_indirection it in
+      Ownership { pointer; x; ty } :: Option.to_list oc
+    | P { name = RET.PName name; pointer = it; iargs = its } ->
+      let iargs, cs =
+        List.fold_left
+          (fun (syms, cs) it ->
+            let sym, oc = add_indirection it in
+            (sym :: syms, match oc with Some c -> c :: cs | None -> cs))
+          ([], [])
+          (it :: its)
+      in
+      Predicate { name; iargs; x } :: cs
+    | Q _ -> Cerb_debug.error "todo: each not supported"
+
+
   let rec collect_clauses
     (filename : string)
     (prog5 : unit Mucore.mu_file)
     (cs_ctx : constraint_context)
-    (lcs : logical_constraints)
+    (cs : constraints)
     (cls : RP.clause list)
     : constraint_context * clause list
     =
     match cls with
     | cl :: cls' ->
-      let cs_ctx, (it, cs) = collect_lat_it filename prog5 cs_ctx lcs cl.packing_ft in
-      let cs_ctx, cls = collect_clauses filename prog5 cs_ctx lcs cls' in
+      let cs_ctx, (it, cs) = collect_lat_it filename prog5 cs_ctx cs cl.packing_ft in
+      let cs_ctx, cls = collect_clauses filename prog5 cs_ctx cs cls' in
       (cs_ctx, { guard = cl.guard; it; cs } :: cls)
     | [] -> (cs_ctx, [])
 
@@ -173,7 +222,7 @@ module Collect = struct
     (filename : string)
     (prog5 : unit Mucore.mu_file)
     (cs_ctx : constraint_context)
-    (lcs : logical_constraints)
+    (cs : constraints)
     (ret : RET.t)
     : constraint_context
     =
@@ -199,7 +248,7 @@ module Collect = struct
                    def = Pred []
                  } )
              :: cs_ctx)
-            lcs
+            cs
             clauses
         in
         (* Get rid of dummy definition *)
@@ -219,57 +268,57 @@ module Collect = struct
     (filename : string)
     (prog5 : unit Mucore.mu_file)
     (cs_ctx : constraint_context)
-    (lcs : logical_constraints)
+    (cs : constraints)
     (lat : IT.t LAT.t)
     : constraint_context * (IT.t * constraints)
     =
     let lat_subst x v e = LAT.subst IT.subst (IT.make_subst [ (x, v) ]) e in
     match lat with
     | Define ((x, tm), _, lat') ->
-      collect_lat_it filename prog5 cs_ctx lcs (lat_subst x tm lat')
+      collect_lat_it filename prog5 cs_ctx cs (lat_subst x tm lat')
     | Resource ((x, (ret, _)), _, lat') ->
-      let cs_ctx = collect_ret filename prog5 cs_ctx lcs ret in
-      let cs_ctx, (v', (rcs, lcs)) = collect_lat_it filename prog5 cs_ctx lcs lat' in
-      (cs_ctx, (v', ((x, ret) :: rcs, lcs)))
+      let cs_ctx = collect_ret filename prog5 cs_ctx cs ret in
+      let cs_ctx, (v', cs) = collect_lat_it filename prog5 cs_ctx cs lat' in
+      (cs_ctx, (v', of_ret x ret @ cs))
     | Constraint (lc, _, lat') ->
-      let cs_ctx, (v, (rcs, lcs)) = collect_lat_it filename prog5 cs_ctx lcs lat' in
-      (cs_ctx, (v, (rcs, lc :: lcs)))
-    | I it -> (cs_ctx, (it, ([], [])))
+      let cs_ctx, (v, cs) = collect_lat_it filename prog5 cs_ctx cs lat' in
+      (cs_ctx, (v, Logical lc :: cs))
+    | I it -> (cs_ctx, (it, []))
 
 
   let rec collect_lat
     (filename : string)
     (prog5 : unit Mucore.mu_file)
     (cs_ctx : constraint_context)
-    (lcs : logical_constraints)
+    (cs : constraints)
     (lat : unit LAT.t)
     : constraint_context * constraints
     =
     let lat_subst x v e = LAT.subst (fun _ x -> x) (IT.make_subst [ (x, v) ]) e in
     match lat with
     | Define ((x, tm), _, lat') ->
-      collect_lat filename prog5 cs_ctx lcs (lat_subst x tm lat')
+      collect_lat filename prog5 cs_ctx cs (lat_subst x tm lat')
     | Resource ((x, (ret, _)), _, lat') ->
-      let cs_ctx = collect_ret filename prog5 cs_ctx lcs ret in
-      let cs_ctx, (rcs, lcs) = collect_lat filename prog5 cs_ctx lcs lat' in
-      (cs_ctx, ((x, ret) :: rcs, lcs))
+      let cs_ctx = collect_ret filename prog5 cs_ctx cs ret in
+      let cs_ctx, cs = collect_lat filename prog5 cs_ctx cs lat' in
+      (cs_ctx, of_ret x ret @ cs)
     | Constraint (lc, _, lat') ->
-      let cs_ctx, (rcs, lcs) = collect_lat filename prog5 cs_ctx lcs lat' in
-      (cs_ctx, (rcs, lc :: lcs))
-    | I _ -> (cs_ctx, ([], lcs))
+      let cs_ctx, cs = collect_lat filename prog5 cs_ctx cs lat' in
+      (cs_ctx, Logical lc :: cs)
+    | I _ -> (cs_ctx, [])
 
 
   let rec collect_at
     (filename : string)
     (prog5 : unit Mucore.mu_file)
     (cs_ctx : constraint_context)
-    (lcs : logical_constraints)
+    (cs : constraints)
     (at : unit AT.t)
     : (Sym.t * BT.t) list * (constraint_context * constraints)
     =
     match at with
     | Computational ((x, bt), _, at') ->
-      let ty_ctx, res = collect_at filename prog5 cs_ctx lcs at' in
+      let ty_ctx, res = collect_at filename prog5 cs_ctx cs at' in
       ((x, bt) :: ty_ctx, res)
     | L lat -> ([], collect_lat filename prog5 cs_ctx [] lat)
 
@@ -312,10 +361,6 @@ end
 let collect = Collect.collect
 
 module Simplify = struct
-  let assume_good_and_representable (_cs_ctx : constraint_context) : constraint_context =
-    failwith "todo: evaluate good and representable to true"
-
-
   let simplify (cs_ctx : constraint_context) : constraint_context = cs_ctx
 end
 
