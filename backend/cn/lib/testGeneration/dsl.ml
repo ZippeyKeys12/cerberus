@@ -8,12 +8,14 @@ module SymMap = Map.Make (Sym)
 module SymSet = Set.Make (Sym)
 
 type gen_term_ =
-  | Arbitrary
-  | Just of IT.t
-  | Alloc of IT.t
+  | Arbitrary (** Generate arbitrary values *)
+  | Just of IT.t (** Generate exactly an [IT.t] *)
+  | Alloc of IT.t (** Allocate an array of a length [IT.t]  and return its address *)
   | Call of Sym.t * IT.t list
+  (** Call a defined generator according to a [Sym.t] with arguments [IT.t list] *)
+[@@deriving eq, ord]
 
-and gen_term = GT of GT.base_type * gen_term_
+and gen_term = GT of GT.base_type * gen_term_ [@@deriving eq, ord]
 
 let rec pp_gen_term (gt : gen_term) : Pp.document =
   let open Pp in
@@ -21,9 +23,9 @@ let rec pp_gen_term (gt : gen_term) : Pp.document =
   | GT (tys, Arbitrary) -> string "arbitrary<" ^^ GT.pp_base_type tys ^^ string ">()"
   | GT (tys, Just it) ->
     string "just<" ^^ GT.pp_base_type tys ^^ string ">(" ^^ IT.pp it ^^ string ")"
-  | GT (tys, Alloc it) ->
+  | GT (gbt, Alloc it) ->
     string "alloc<"
-    ^^ GT.pp_base_type tys
+    ^^ (match gbt with Loc gbt' -> GT.pp_base_type gbt' | _ -> failwith "ill-typed")
     ^^ string ">("
     ^^ space
     ^^ IT.pp it
@@ -37,12 +39,32 @@ let rec pp_gen_term (gt : gen_term) : Pp.document =
     ^^ parens (nest 2 (separate_map (comma ^^ break 1) IT.pp its))
 
 
+let rec subst_gen_term_
+  (su : [ `Term of IT.typed | `Rename of Sym.t ] Subst.t)
+  (gt_ : gen_term_)
+  : gen_term_
+  =
+  match gt_ with
+  | Arbitrary -> Arbitrary
+  | Just it -> Just (IT.subst su it)
+  | Alloc it -> Alloc (IT.subst su it)
+  | Call (fsym, its) -> Call (fsym, List.map (IT.subst su) its)
+
+
+and subst_gen_term (su : [ `Term of IT.typed | `Rename of Sym.t ] Subst.t) (gt : gen_term)
+  : gen_term
+  =
+  let (GT (gbt, gt_)) = gt in
+  GT (gbt, subst_gen_term_ su gt_)
+
+
 type gen =
   | Asgn of (IT.t * GT.base_type) * IT.t * gen
   | Let of Sym.t list * gen_term * gen
   | Return of IT.t
   | Assert of LC.t list * gen
   | ITE of IT.t * gen * gen
+[@@deriving eq, ord]
 
 let rec pp_gen (g : gen) : Pp.document =
   let open Pp in
@@ -86,6 +108,38 @@ let rec pp_gen (g : gen) : Pp.document =
     ^^ braces (nest 2 (break 1 ^^ pp_gen g_else) ^^ break 1)
 
 
+let rec subst_gen (su : [ `Term of IT.typed | `Rename of Sym.t ] Subst.t) (g : gen) : gen =
+  match g with
+  | Asgn ((it_addr, gbt), it_val, g') ->
+    Asgn ((IT.subst su it_addr, gbt), IT.subst su it_val, subst_gen su g')
+  | Let (xs, gt, g') ->
+    let xs, g' =
+      List.fold_left
+        (fun (acc, g') x ->
+          let x, g' = suitably_alpha_rename_gen su.relevant x g' in
+          (x :: acc, g'))
+        ([], g')
+        xs
+    in
+    Let (xs, subst_gen_term su gt, subst_gen su g')
+  | Return it -> Return (IT.subst su it)
+  | Assert (lcs, g') -> Assert (List.map (LC.subst su) lcs, subst_gen su g')
+  | ITE (it, g_then, g_else) ->
+    ITE (IT.subst su it, subst_gen su g_then, subst_gen su g_else)
+
+
+and alpha_rename_gen x g =
+  let x' = Sym.fresh_same x in
+  (x', subst_gen (IT.make_rename ~from:x ~to_:x') g)
+
+
+and suitably_alpha_rename_gen syms x g =
+  if SymSet.mem x syms then
+    alpha_rename_gen x g
+  else
+    (x, g)
+
+
 let map_gen (f : gen -> gen) (g : gen) : gen =
   match g with
   | Asgn ((it_addr, gt), it_val, g') -> Asgn ((it_addr, gt), it_val, f g')
@@ -101,6 +155,7 @@ type gen_def =
     oargs : GT.base_type list;
     body : gen option
   }
+[@@deriving eq, ord]
 
 let pp_gen_def (gd : gen_def) : Pp.document =
   let open Pp in
@@ -137,14 +192,8 @@ let pp_gen_context (gtx : gen_context) : Pp.document =
           gtx)
 
 
-(** Generate arbitrary values of type [ty] *)
-let arbitrary_ (ty : GT.base_type) : gen_term = GT (ty, Arbitrary)
-
-(** Generate exactly [it] of type [ty] *)
-let just_ (it : IT.t) : gen_term = GT (GT.of_bt (IT.bt it), Just it)
-
-(** Allocate memory containing the result of [gt] and return its address *)
-let alloc_ (it : IT.t) : gen_term = GT (GT.of_bt (IT.bt it), Alloc it)
+(** Generate arbitrary values of type [gbt] *)
+let arbitrary_ (gbt : GT.base_type) : gen_term = GT (gbt, Arbitrary)
 
 (** Call a defined generator named [fsym] with arguments [gts], from context [gtx] *)
 let call_ (gtx : gen_context) (fsym : Sym.t) (its : IT.t list) : gen_term =
@@ -227,12 +276,7 @@ module Compile = struct
           (fun g c ->
             match c with
             | Ownership { pointer; x; ty } ->
-              G.add_edge_e
-                g
-                ( (pointer, Loc),
-                  ( x,
-                    BT.of_sct Memory.is_signed_integer_type Memory.size_of_integer_type ty
-                  ) )
+              G.add_edge_e g ((pointer, Loc), (x, Memory.bt_of_sct ty))
             | Logical lc ->
               (match lc with
                | T (IT (Binop (EQ, it1, it2), _, _))
@@ -275,31 +319,6 @@ module Compile = struct
       g
 
 
-    let pp_weak_topological (ho : G.vertex Graph.WeakTopological.t) : Pp.document =
-      let open Pp in
-      let rec aux (elem : G.vertex Graph.WeakTopological.element) : document =
-        match elem with
-        | Vertex (x, bt) -> Sym.pp x ^^ space ^^ colon ^^ space ^^ BT.pp bt
-        | Component ((x, bt), elems) ->
-          parens
-            ((Sym.pp x ^^ space ^^ colon ^^ space ^^ BT.pp bt)
-             ^^ semi
-             ^^ break 1
-             ^^ Graph.WeakTopological.fold_left
-                  (fun acc elem -> acc ^^ space ^^ aux elem)
-                  empty
-                  elems)
-      in
-      surround_separate
-        2
-        1
-        (lbracket ^^ rbracket)
-        lbracket
-        (semi ^^ break 1)
-        rbracket
-        (Graph.WeakTopological.fold_left (fun acc elem -> acc @ [ aux elem ]) [] ho)
-
-
     (** Choose an optimal linear ordering from a hierarchical ordering
         FIXME: Currently just selects arbitrary one, maybe wait on Leo's work?
         **)
@@ -329,6 +348,7 @@ module Compile = struct
 
   let compile_gen_term
     (gtx : gen_context)
+    (pointer_info : (BT.t * IT.t list) option)
     ((x, bt) : Order.G.vertex)
     (cs : constraints)
     (g : gen)
@@ -359,8 +379,134 @@ module Compile = struct
       Let ([ x ], arbitrary_ (GT.of_bt bt), g_assert g_assign)
     | [ Predicate { name; iargs; oarg } ] ->
       Let (List.map fst (oarg :: iargs), call_ gtx name [], g)
-    | [] -> Let ([ x ], arbitrary_ (GT.of_bt bt), g_assert g)
+    | [] ->
+      (match pointer_info with
+       | Some (bt_data, its) ->
+         Let
+           ( [ x ],
+             GT
+               ( Loc (GT.of_bt bt_data),
+                 Alloc
+                   (let here = Locations.other __FUNCTION__ in
+                    let ns, it_rest =
+                      List.partition_map
+                        (fun it ->
+                          match IT.get_num_z it with Some n -> Left n | None -> Right it)
+                        its
+                    in
+                    let it_const =
+                      IT.num_lit_
+                        (match ns with
+                         | n :: ns' -> List.fold_left (fun acc n' -> Z.max acc n') n ns'
+                         | [] -> Z.zero)
+                        Memory.size_bt
+                        here
+                    in
+                    let it_max =
+                      List.fold_left
+                        (fun it1 it2 -> IT.max_ (it1, it2) here)
+                        it_const
+                        it_rest
+                    in
+                    IT.add_ (it_max, IT.num_lit_ Z.one (IT.bt it_max) here) here) ),
+             g_assert g )
+       | None -> Let ([ x ], arbitrary_ (GT.of_bt bt), g_assert g))
     | [ Logical _ ] -> failwith ("unreachable (" ^ __LOC__ ^ ")")
+
+
+  let rec get_offsets (x : Sym.t) (it : IT.t) : (IT.t * BT.t) list =
+    let (IT (t_, _, _)) = it in
+    match t_ with
+    | Const _ | Sym _ | SizeOf _ | OffsetOf _ | Nil _ -> []
+    | Unop (_, it')
+    | NthTuple (_, it')
+    | StructMember (it', _)
+    | RecordMember (it', _)
+    | Cast (_, it')
+    | MemberShift (it', _, _)
+    | Head it'
+    | Tail it'
+    | Representable (_, it')
+    | Good (_, it')
+    | WrapI (_, it')
+    | MapConst (_, it') ->
+      get_offsets x it'
+    | Binop (_, it1, it2)
+    | StructUpdate ((it1, _), it2)
+    | RecordUpdate ((it1, _), it2)
+    | Cons (it1, it2)
+    | MapGet (it1, it2) ->
+      get_offsets_list x [ it1; it2 ]
+    | ITE (it1, it2, it3)
+    | NthList (it1, it2, it3)
+    | ArrayToList (it1, it2, it3)
+    | MapSet (it1, it2, it3) ->
+      get_offsets_list x [ it1; it2; it3 ]
+    | EachI ((_, (x', _), _), it') | MapDef ((x', _), it') ->
+      if Sym.equal x x' then [] else get_offsets x it'
+    | Tuple its | Apply (_, its) -> get_offsets_list x its
+    | Struct (_, xits) | Record xits | Constructor (_, xits) ->
+      get_offsets_list x (List.map snd xits)
+    | ArrayShift { base; ct = _; index } ->
+      let its = get_offsets x base in
+      (match IT.is_sym base with
+       | Some (x', _) when Sym.equal x x' -> (index, IT.bt index) :: its
+       | _ -> its)
+    | CopyAllocId { addr; loc } -> get_offsets_list x [ addr; loc ]
+    | Aligned { t; align } -> get_offsets_list x [ t; align ]
+    | Let ((x', it1), it2) ->
+      if Sym.equal x x' then get_offsets x it1 else get_offsets_list x [ it1; it2 ]
+    | Match (it, cases) ->
+      let rec aux acc = function
+        | [] -> acc
+        | (pat, it') :: cases ->
+          let bound = SymSet.of_list (List.map fst (IT.bound_by_pattern pat)) in
+          if IT.SymSet.mem x bound then
+            aux acc cases
+          else
+            aux (get_offsets x it' @ acc) cases
+      in
+      aux (get_offsets x it) cases
+
+
+  and get_offsets_list (x : Sym.t) (its : IT.t list) : (IT.t * BT.t) list =
+    List.fold_left (fun acc it -> get_offsets x it @ acc) [] its
+
+
+  let rec get_pointer_info (x : Sym.t) (cs : constraints) : (BT.t * IT.t list) option =
+    let open Option in
+    let rec aux (cs : constraints) : (IT.t * BT.t) list option =
+      match cs with
+      | Logical (T (IT (Binop (EQ, IT (Sym x', _, _), _), _, _))) :: _ when Sym.equal x x'
+        ->
+        None
+      | Logical (T (IT (Binop (EQ, _, IT (Sym x', _, _)), _, _))) :: _ when Sym.equal x x'
+        ->
+        None
+      | Logical (T it) :: cs' ->
+        let@ its_bts = aux cs' in
+        return (get_offsets x it @ its_bts)
+      | Logical _ :: _ -> failwith "todo: assert each"
+      | Ownership _ :: cs' | Predicate _ :: cs' -> aux cs'
+      | [] -> Some []
+    in
+    let@ its_bts = aux cs in
+    let its, bts = List.split its_bts in
+    let@ bt =
+      match bts with
+      | bt :: bts ->
+        List.fold_left
+          (fun acc bt ->
+            let@ bt' = acc in
+            if BT.equal bt bt' then
+              Some bt
+            else
+              None)
+          (Some bt)
+          bts
+      | [] -> None
+    in
+    return (bt, its)
 
 
   let get_constraint_to_elim (o : Order.G.vertex list) (xs : SymSet.t) (c : constraint_) =
@@ -400,6 +546,12 @@ module Compile = struct
           (lazy
             (let open Pp in
              string "Compiling variable `" ^^ Sym.pp x ^^ string "`"));
+        let pointer_info =
+          if BT.equal bt BT.Loc then
+            get_pointer_info x cs
+          else
+            None
+        in
         let predicate_cs, remaining_cs =
           List.partition
             (fun c ->
@@ -443,7 +595,12 @@ module Compile = struct
               | Predicate _ -> false)
             remaining_cs
         in
-        compile_gen_term gtx (x, bt) (predicate_cs @ primitive_cs) (aux o' remaining_cs)
+        compile_gen_term
+          gtx
+          pointer_info
+          (x, bt)
+          (predicate_cs @ primitive_cs)
+          (aux o' remaining_cs)
       | [] ->
         if List.length cs = 0 then (
           let here = Cerb_location.other __FUNCTION__ in
@@ -526,6 +683,21 @@ end
 let compile = Compile.compile
 
 module Optimize = struct
+  let rec inline_just_terms (g : gen) : gen =
+    let g =
+      match g with
+      | Let ([ x ], GT (_, Just it), g') ->
+        let (IT (t_, _, _)) = it in
+        (match t_ with
+         (* Terms to inline *)
+         | Const _ | Sym _ | MemberShift _ | ArrayShift _ ->
+           subst_gen (IT.make_subst [ (x, it) ]) g'
+         | _ -> g')
+      | _ -> g
+    in
+    map_gen inline_just_terms g
+
+
   module BespokeGenerators = struct
     let rec equality_constraints (g : gen) : gen =
       let g =
@@ -548,6 +720,7 @@ module Optimize = struct
             let g' = if List.is_empty lc_rest then g' else Assert (lcs_rest, g') in
             Let ([ x ], GT (gt, Just it), g')
           in
+          (* Apply rewrite *)
           (match lcs_eq with
            | LC.T (IT (Binop (EQ, IT (Sym x', _, _), it), _, _)) :: lcs_eq'
              when Sym.equal x x' ->
@@ -565,9 +738,13 @@ module Optimize = struct
     let run (g : gen) : gen = g |> equality_constraints
   end
 
-  let optimize_gen (g : gen) : gen = g |> BespokeGenerators.run
+  let rec optimize_gen (g : gen) : gen =
+    let old_g = g in
+    let new_g = g |> inline_just_terms |> BespokeGenerators.run in
+    if equal_gen old_g new_g then new_g else optimize_gen new_g
 
-  let optimize_gen_def ({ name; iargs; oargs; body } : gen_def) : gen_def =
+
+  let rec optimize_gen_def ({ name; iargs; oargs; body } : gen_def) : gen_def =
     { name; iargs; oargs; body = Option.map optimize_gen body }
 
 
