@@ -202,7 +202,7 @@ let rec codify_gen_term (gt : gen_term) : Pp.document =
          (nest
             2
             (break 0
-             ^^ codify_gen_term (GT (gbt', Just it))
+             ^^ codify_gen_term (GT (GT.of_bt Memory.size_bt, Just it))
              ^^ comma
              ^^ break 1
              ^^ brackets equals
@@ -213,7 +213,7 @@ let rec codify_gen_term (gt : gen_term) : Pp.document =
                      (break 1
                       ^^ string "auto *p = "
                       ^^ parens (codify_base_type gbt)
-                      ^^ string " malloc"
+                      ^^ string "malloc"
                       ^^ parens
                            (Sym.pp sym
                             ^^ space
@@ -255,6 +255,22 @@ let rec codify_gen (g : gen) : Pp.document =
     ^^ equals
     ^^ space
     ^^ codify_it it_val
+    ^^ semi
+    ^^ break 1
+    ^^ string "auto "
+    ^^
+    let sym = Sym.fresh () in
+    Sym.pp sym
+    ^^ string " = (char *)\"generator\";"
+    ^^ break 1
+    ^^ string "cn_assume_ownership"
+    ^^ parens
+         (separate
+            (comma ^^ space)
+            [ string "(void*)" ^^ codify_it it_addr;
+              string "sizeof" ^^ parens (codify_base_type gt);
+              Sym.pp sym
+            ])
     ^^ semi
     ^^ break 1
     ^^ codify_gen g'
@@ -336,6 +352,13 @@ let codify_generators
       "#include <rapidcheck.h>"
     ]
   ^^ twice hardline
+  ^^ string "extern"
+  ^^ space
+  ^^ dquotes (char 'C')
+  ^^ space
+  ^^ string
+       "void cn_assume_ownership(void *generic_c_ptr, unsigned long size, char *fun);"
+  ^^ break 1
   ^^ codify_declarations sigma inst_list
   ^^ twice hardline
   ^^ string "namespace cn"
@@ -358,6 +381,22 @@ module Impl (C : TF_Codify) = struct
     ^^ dquotes (string gen_filename)
     ^^ hardline
     ^^ C.codify_test_includes ()
+    ^^ twice hardline
+    ^^ string "extern \"C\" void initialise_ownership_ghost_state(void);"
+    ^^ hardline
+    ^^ string "extern \"C\" void initialise_ghost_stack_depth(void);"
+    ^^ twice hardline
+    ^^ string "extern \"C\" void ghost_stack_depth_incr(void);"
+    ^^ hardline
+    ^^ string "extern \"C\" void ghost_stack_depth_decr(void);"
+    ^^ twice hardline
+    ^^ string
+         "extern \"C\" void c_add_local_to_ghost_state(uintptr_t ptr_to_local, size_t \
+          size);"
+    ^^ hardline
+    ^^ string
+         "extern \"C\" void c_remove_local_from_ghost_state(uintptr_t ptr_to_local, \
+          size_t size);"
 
 
   let codify_pbt
@@ -385,7 +424,13 @@ module Impl (C : TF_Codify) = struct
     C.codify_pbt
       (Sym.pp instrumentation.fn)
       (string "RandomTests")
-      (string "auto"
+      (string "initialise_ownership_ghost_state();"
+       ^^ break 1
+       ^^ string "initialise_ghost_stack_depth();"
+       ^^ break 1
+       ^^ string "ghost_stack_depth_incr();"
+       ^^ twice hardline
+       ^^ string "auto"
        ^^ space
        ^^ brackets (separate_map (comma ^^ break 1) (fun (x, _) -> Sym.pp x) args)
        ^^ space
@@ -395,7 +440,18 @@ module Impl (C : TF_Codify) = struct
        ^^ Sym.pp instrumentation.fn
        ^^ parens empty
        ^^ semi
-       ^^ break 1
+       ^^ twice hardline
+       ^^ separate_map
+            (semi ^^ break 1)
+            (fun (x, ty) ->
+              string "c_add_local_to_ghost_state((uintptr_t) &"
+              ^^ Sym.pp x
+              ^^ string ", sizeof("
+              ^^ CF.Pp_ail.pp_ctype CF.Ctype.no_qualifiers (Sctypes.to_ctype ty)
+              ^^ string "))")
+            args
+       ^^ semi
+       ^^ twice hardline
        ^^ Sym.pp instrumentation.fn
        ^^ parens
             (separate_map
@@ -404,7 +460,20 @@ module Impl (C : TF_Codify) = struct
                  parens (CF.Pp_ail.pp_ctype CF.Ctype.no_qualifiers (Sctypes.to_ctype ty))
                  ^^ Sym.pp x)
                args)
-       ^^ semi)
+       ^^ semi
+       ^^ twice hardline
+       ^^ separate_map
+            (semi ^^ break 1)
+            (fun (x, ty) ->
+              string "c_remove_local_from_ghost_state((uintptr_t) &"
+              ^^ Sym.pp x
+              ^^ string ", sizeof("
+              ^^ CF.Pp_ail.pp_ctype CF.Ctype.no_qualifiers (Sctypes.to_ctype ty)
+              ^^ string "))")
+            args
+       ^^ semi
+          (* ^^ break 1
+             ^^ string "ghost_stack_depth_decr();" *))
 
 
   let codify_tests

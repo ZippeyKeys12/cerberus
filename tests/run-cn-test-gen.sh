@@ -24,7 +24,7 @@ for TEST in $FILES; do
   CLEANUP="rm -rf decorated/*"
 
   # Instrument file
-  $CN verify "$TEST" --output-decorated="$(basename "$TEST")" --output-decorated-dir=decorated/
+  $CN verify "$TEST" --output-decorated="$(basename "$TEST")" --output-decorated-dir=decorated/ --with-ownership-checking
   RET=$?
   if [[ "$RET" != 0 ]]; then
     echo "$TEST -- Error during executable spec decoration"

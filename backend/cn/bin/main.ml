@@ -317,9 +317,9 @@ let verify
               output_decorated_dir
               output_filename
               prog5
-              statement_locs;
-            Resultat.return ())
-          ())
+              statement_locs)
+          ();
+        Resultat.return ())
 
 
 let generate_tests

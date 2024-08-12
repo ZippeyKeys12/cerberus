@@ -368,9 +368,10 @@ let main
     open_auxilliary_files filename prefix included_filenames' []
   in
   let pre_post_pairs =
-    if with_ownership_checking then (
-      let global_ownership_init_pair = generate_ownership_global_assignments sigm prog5 in
-      global_ownership_init_pair @ executable_spec.pre_post)
+    if with_ownership_checking then
+      (* let global_ownership_init_pair = generate_ownership_global_assignments sigm prog5 in
+      global_ownership_init_pair @  *)
+      executable_spec.pre_post
     else
       executable_spec.pre_post
   in
