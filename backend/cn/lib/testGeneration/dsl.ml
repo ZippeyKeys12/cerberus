@@ -2,7 +2,6 @@ module GT = GenTypes
 module IT = IndexTerms
 module LC = LogicalConstraints
 open Constraints
-open Utils
 module CF = Cerb_frontend
 module SymMap = Map.Make (Sym)
 module SymSet = Set.Make (Sym)
@@ -13,11 +12,11 @@ type gen_term_ =
   | Alloc of IT.t (** Allocate an array of a length [IT.t]  and return its address *)
   | Call of Sym.t * IT.t list
   (** Call a defined generator according to a [Sym.t] with arguments [IT.t list] *)
-[@@deriving eq, ord]
+[@@deriving eq]
 
-and gen_term = GT of GT.base_type * gen_term_ [@@deriving eq, ord]
+and gen_term = GT of GT.base_type * gen_term_ [@@deriving eq]
 
-let rec pp_gen_term (gt : gen_term) : Pp.document =
+let pp_gen_term (gt : gen_term) : Pp.document =
   let open Pp in
   match gt with
   | GT (tys, Arbitrary) -> string "arbitrary<" ^^ GT.pp_base_type tys ^^ string ">()"
@@ -64,13 +63,13 @@ type gen =
   | Return of IT.t
   | Assert of LC.t list * gen
   | ITE of IT.t * gen * gen
-[@@deriving eq, ord]
+[@@deriving eq]
 
 let rec pp_gen (g : gen) : Pp.document =
   let open Pp in
   match g with
-  | Asgn ((it_addr, gt), it_val, g') ->
-    GT.pp_base_type gt
+  | Asgn ((it_addr, gbt), it_val, g') ->
+    (match gbt with Loc gbt' -> GT.pp_base_type gbt' | _ -> failwith "ill-typed")
     ^^ space
     ^^ IT.pp it_addr
     ^^ space
@@ -150,12 +149,12 @@ let map_gen (f : gen -> gen) (g : gen) : gen =
 
 
 type gen_def =
-  { name : Sym.t;
+  { filename : string;
+    name : Sym.t;
     iargs : (Sym.t * GT.base_type) list;
     oargs : GT.base_type list;
     body : gen option
   }
-[@@deriving eq, ord]
 
 let pp_gen_def (gd : gen_def) : Pp.document =
   let open Pp in
@@ -333,9 +332,10 @@ module Compile = struct
 
   let rec get_dummy_context (cs_ctx : Constraints.t) : gen_context =
     match cs_ctx with
-    | (name, CD { fn = _; name = _; iargs; oarg; def = _ }) :: cs_ctx' ->
+    | (name, CD { filename; name = _; iargs; oarg; def = _ }) :: cs_ctx' ->
       ( name,
-        { name;
+        { filename;
+          name;
           iargs = [];
           oargs =
             (let l = List.map (fun (_, bt) -> GT.of_bt bt) iargs in
@@ -473,7 +473,7 @@ module Compile = struct
     List.fold_left (fun acc it -> get_offsets x it @ acc) [] its
 
 
-  let rec get_pointer_info (x : Sym.t) (cs : constraints) : (BT.t * IT.t list) option =
+  let get_pointer_info (x : Sym.t) (cs : constraints) : (BT.t * IT.t list) option =
     let open Option in
     let rec aux (cs : constraints) : (IT.t * BT.t) list option =
       match cs with
@@ -504,7 +504,7 @@ module Compile = struct
               None)
           (Some bt)
           bts
-      | [] -> None
+      | [] -> Some Unit
     in
     return (bt, its)
 
@@ -646,7 +646,7 @@ module Compile = struct
 
   let compile_gen
     (gtx : gen_context)
-    (CD { fn; name; def; iargs; oarg } : constraint_definition)
+    (CD { filename; name; def; iargs; oarg } : constraint_definition)
     : gen_def
     =
     Pp.debug
@@ -659,13 +659,14 @@ module Compile = struct
          ^^ space
          ^^ at
          ^^ space
-         ^^ string fn));
+         ^^ string filename));
     let g =
       match def with
       | Pred cls -> compile_clauses gtx iargs cls
       | Spec cs -> compile_gen_terms gtx iargs cs None
     in
-    { name;
+    { filename;
+      name;
       iargs = [];
       oargs =
         (let l = List.map (fun (_, bt) -> GT.of_bt bt) iargs in
@@ -744,8 +745,8 @@ module Optimize = struct
     if equal_gen old_g new_g then new_g else optimize_gen new_g
 
 
-  let rec optimize_gen_def ({ name; iargs; oargs; body } : gen_def) : gen_def =
-    { name; iargs; oargs; body = Option.map optimize_gen body }
+  let optimize_gen_def ({ filename; name; iargs; oargs; body } : gen_def) : gen_def =
+    { filename; name; iargs; oargs; body = Option.map optimize_gen body }
 
 
   let optimize (gtx : gen_context) : gen_context = List.map_snd optimize_gen_def gtx

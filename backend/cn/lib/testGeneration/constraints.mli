@@ -38,7 +38,7 @@ type constraint_definition_ =
 
 and constraint_definition =
   | CD of
-      { fn : string; (** File this definition came from *)
+      { filename : string; (** File this definition came from *)
         name : Sym.t;
         iargs : (Sym.t * BT.t) list;
         oarg : BT.t option;

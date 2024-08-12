@@ -23,7 +23,8 @@ type gen =
 val pp_gen : gen -> Pp.document
 
 type gen_def =
-  { name : Sym.t;
+  { filename : string;
+    name : Sym.t;
     iargs : (Sym.t * GT.base_type) list;
     oargs : GT.base_type list;
     body : gen option

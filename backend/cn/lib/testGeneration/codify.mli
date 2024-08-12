@@ -1,14 +1,11 @@
+module CF = Cerb_frontend
+
 type test_framework = GTest
 
-type codify_result =
-  { gens : Pp.document;
-    tests : Pp.document
-  }
-
-type codify_context = (string * codify_result) list
-
-type t = codify_context
-
-val codify : test_framework -> Dsl.gen_context -> t
-
-val save : output_dir:string -> t -> unit
+val codify
+  :  output_dir:string ->
+  test_framework ->
+  _ CF.AilSyntax.sigma ->
+  unit Mucore.mu_file ->
+  Dsl.gen_context ->
+  unit

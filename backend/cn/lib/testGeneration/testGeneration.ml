@@ -33,7 +33,7 @@ let run
   ~(output_dir : string)
   ~(filename : string)
   ~(max_unfolds : int)
-  (_sigma : _ CF.AilSyntax.sigma)
+  (sigma : _ CF.AilSyntax.sigma)
   (prog5 : unit Mucore.mu_file)
   (tf : Codify.test_framework)
   : unit
@@ -47,7 +47,7 @@ let run
             [ Open_wronly; Open_creat; (* Open_append; *) Open_trunc; Open_text ]
             0o666
             (Filename.concat output_dir "testGeneration.log"));
-  (* Cerb_debug.begin_csv_timing (); *)
+  Cerb_debug.begin_csv_timing ();
   debug_log ("Starting test generation for " ^ filename ^ "\n\n");
   let cs_ctx = Constraints.collect prog5 [ filename ] in
   debug_stage "Collect" (cs_ctx |> Constraints.pp_constraint_context |> Pp.plain ~width:90);
@@ -59,6 +59,6 @@ let run
   debug_stage "Compile" (gtx |> Dsl.pp_gen_context |> Pp.plain ~width:90);
   let gtx = Dsl.optimize gtx in
   debug_stage "Optimize" (gtx |> Dsl.pp_gen_context |> Pp.plain ~width:90);
-  let _ = lazy (gtx |> Codify.codify tf |> Codify.save ~output_dir) in
-  (* Cerb_debug.end_csv_timing "test generation"; *)
+  gtx |> Codify.codify ~output_dir tf sigma prog5;
+  Cerb_debug.end_csv_timing "test generation";
   ()

@@ -109,7 +109,7 @@ type constraint_definition_ =
 
 and constraint_definition =
   | CD of
-      { fn : string; (** File this definition came from *)
+      { filename : string; (** File this definition came from *)
         name : Sym.t;
         iargs : (Sym.t * BT.t) list;
         oarg : BT.t option;
@@ -119,7 +119,7 @@ and constraint_definition =
 let pp_constraint_definition (cs_def : constraint_definition) : Pp.document =
   let open Pp in
   match cs_def with
-  | CD { fn; name; iargs = _; oarg = _; def = Pred cls } ->
+  | CD { filename; name; iargs = _; oarg = _; def = Pred cls } ->
     group
       (string "pred"
        ^^ lparen
@@ -139,8 +139,8 @@ let pp_constraint_definition (cs_def : constraint_definition) : Pp.document =
        ^^ break 1
        ^^ at
        ^^ space
-       ^^ string fn)
-  | CD { fn; name; iargs = _; oarg = _; def = Spec cs } ->
+       ^^ string filename)
+  | CD { filename; name; iargs = _; oarg = _; def = Spec cs } ->
     group
       (string "spec"
        ^^ lparen
@@ -151,7 +151,7 @@ let pp_constraint_definition (cs_def : constraint_definition) : Pp.document =
        ^^ break 1
        ^^ at
        ^^ space
-       ^^ string fn)
+       ^^ string filename)
 
 
 type constraint_context = (Sym.t * constraint_definition) list
@@ -261,13 +261,13 @@ module Collect = struct
           collect_clauses
             filename
             prog5
-            ((name, CD { fn = filename; name; iargs; oarg; def = Pred [] }) :: cs_ctx)
+            ((name, CD { filename; name; iargs; oarg; def = Pred [] }) :: cs_ctx)
             cs
             clauses
         in
         (* Get rid of dummy definition *)
         let cs_ctx = List.filter (fun (psym', _) -> not (Sym.equal name psym')) cs_ctx in
-        (name, CD { fn = filename; name; iargs; oarg; def = Pred rest }) :: cs_ctx)
+        (name, CD { filename; name; iargs; oarg; def = Pred rest }) :: cs_ctx)
 
 
   and collect_lat_it
@@ -338,7 +338,7 @@ module Collect = struct
     : constraint_context
     =
     let ty_ctx, (cs_ctx, cs) = collect_at filename prog5 cs_ctx [] at in
-    (fsym, CD { fn = filename; name = fsym; iargs = ty_ctx; oarg = None; def = Spec cs })
+    (fsym, CD { filename; name = fsym; iargs = ty_ctx; oarg = None; def = Spec cs })
     :: cs_ctx
 
 
