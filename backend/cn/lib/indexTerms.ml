@@ -1117,3 +1117,96 @@ let nth_array_to_list_facts (binders_terms : (t_bindings * t) list) =
             None)
         arr_lists)
     nths
+
+
+let rec map_term_pre (f : BT.t term -> BT.t term) (it : BT.t term) : BT.t term =
+  let (IT (t_, bt, here)) = f it in
+  let loop = map_term_pre f in
+  let t_ : BT.t term_ =
+    match t_ with
+    | Const _ | Sym _ | Nil _ | SizeOf _ | OffsetOf _ -> t_
+    | Unop (op, it') -> Unop (op, loop it')
+    | Binop (op, it1, it2) -> Binop (op, loop it1, loop it2)
+    | ITE (it_if, it_then, it_else) -> ITE (loop it_if, loop it_then, loop it_else)
+    | EachI (range, it') -> EachI (range, loop it')
+    | Tuple its -> Tuple (List.map loop its)
+    | NthTuple (i, it') -> NthTuple (i, loop it')
+    | Struct (tag, xits) -> Struct (tag, List.map (fun (x, it) -> (x, loop it)) xits)
+    | StructMember (it', member) -> StructMember (loop it', member)
+    | StructUpdate ((it_struct, member), it_value) ->
+      StructUpdate ((loop it_struct, member), loop it_value)
+    | Record xits -> Record (List.map (fun (x, it) -> (x, loop it)) xits)
+    | RecordMember (it', member) -> RecordMember (loop it', member)
+    | RecordUpdate ((it_struct, member), it_value) ->
+      RecordUpdate ((loop it_struct, member), loop it_value)
+    | Constructor (constr, xits) ->
+      Constructor (constr, List.map (fun (x, it) -> (x, loop it)) xits)
+    | MemberShift (it', tag, member) -> MemberShift (loop it', tag, member)
+    | ArrayShift { base; ct; index } ->
+      ArrayShift { base = loop base; ct; index = loop index }
+    | CopyAllocId { addr; loc } -> CopyAllocId { addr = loop addr; loc = loop loc }
+    | Cons (it_head, it_tail) -> Cons (loop it_head, loop it_tail)
+    | Head it' -> Head (loop it')
+    | Tail it' -> Tail (loop it')
+    | NthList (i, xs, d) -> NthList (loop i, loop xs, loop d)
+    | ArrayToList (arr, i, len) -> ArrayToList (loop arr, loop i, loop len)
+    | Representable (ct, it') -> Representable (ct, loop it')
+    | Good (ct, it') -> Good (ct, loop it')
+    | Aligned { t; align } -> Aligned { t = loop t; align = loop align }
+    | WrapI (ct, it') -> WrapI (ct, loop it')
+    | MapConst (bt', it') -> MapConst (bt', loop it')
+    | MapSet (it_m, it_k, it_v) -> MapSet (loop it_m, loop it_k, loop it_v)
+    | MapGet (it_m, it_key) -> MapGet (loop it_m, loop it_key)
+    | MapDef (sbt, it') -> MapDef (sbt, loop it')
+    | Apply (fsym, its) -> Apply (fsym, List.map loop its)
+    | Let ((x, it_v), it_rest) -> Let ((x, loop it_v), loop it_rest)
+    | Match (it', pits) -> Match (loop it', List.map (fun (p, it) -> (p, loop it)) pits)
+    | Cast (bt', it') -> Cast (bt', loop it')
+  in
+  IT (t_, bt, here)
+
+
+let rec map_term_post (f : BT.t term -> BT.t term) (it : BT.t term) : BT.t term =
+  let (IT (t_, bt, here)) = it in
+  let loop = map_term_post f in
+  let t_ : BT.t term_ =
+    match t_ with
+    | Const _ | Sym _ | Nil _ | SizeOf _ | OffsetOf _ -> t_
+    | Unop (op, it') -> Unop (op, loop it')
+    | Binop (op, it1, it2) -> Binop (op, f it1, f it2)
+    | ITE (it_if, it_then, it_else) -> ITE (f it_if, f it_then, f it_else)
+    | EachI (range, it') -> EachI (range, loop it')
+    | Tuple its -> Tuple (List.map f its)
+    | NthTuple (i, it') -> NthTuple (i, loop it')
+    | Struct (tag, xits) -> Struct (tag, List.map (fun (x, it) -> (x, loop it)) xits)
+    | StructMember (it', member) -> StructMember (loop it', member)
+    | StructUpdate ((it_struct, member), it_value) ->
+      StructUpdate ((f it_struct, member), f it_value)
+    | Record xits -> Record (List.map (fun (x, it) -> (x, loop it)) xits)
+    | RecordMember (it', member) -> RecordMember (loop it', member)
+    | RecordUpdate ((it_struct, member), it_value) ->
+      RecordUpdate ((f it_struct, member), f it_value)
+    | Constructor (constr, xits) ->
+      Constructor (constr, List.map (fun (x, it) -> (x, loop it)) xits)
+    | MemberShift (it', tag, member) -> MemberShift (loop it', tag, member)
+    | ArrayShift { base; ct; index } -> ArrayShift { base = f base; ct; index = f index }
+    | CopyAllocId { addr; loc } -> CopyAllocId { addr = f addr; loc = f loc }
+    | Cons (it_head, it_tail) -> Cons (f it_head, f it_tail)
+    | Head it' -> Head (loop it')
+    | Tail it' -> Tail (loop it')
+    | NthList (i, xs, d) -> NthList (f i, f xs, f d)
+    | ArrayToList (arr, i, len) -> ArrayToList (f arr, f i, f len)
+    | Representable (ct, it') -> Representable (ct, loop it')
+    | Good (ct, it') -> Good (ct, loop it')
+    | Aligned { t; align } -> Aligned { t = f t; align = f align }
+    | WrapI (ct, it') -> WrapI (ct, loop it')
+    | MapConst (bt', it') -> MapConst (bt', loop it')
+    | MapSet (it_m, it_k, it_v) -> MapSet (f it_m, f it_k, f it_v)
+    | MapGet (it_m, it_key) -> MapGet (f it_m, f it_key)
+    | MapDef (sbt, it') -> MapDef (sbt, loop it')
+    | Apply (fsym, its) -> Apply (fsym, List.map f its)
+    | Let ((x, it_v), it_rest) -> Let ((x, f it_v), f it_rest)
+    | Match (it', pits) -> Match (loop it', List.map (fun (p, it) -> (p, loop it)) pits)
+    | Cast (bt', it') -> Cast (bt', loop it')
+  in
+  f (IT (t_, bt, here))
