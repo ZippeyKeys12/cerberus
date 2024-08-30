@@ -382,7 +382,6 @@ let generate_tests
   (* Test Generation *)
     output_dir
   max_unfolds
-  testing_framework
   =
   (* flags *)
   Cerb_debug.debug_level := debug_level;
@@ -408,14 +407,7 @@ let generate_tests
     ~f:(fun ~prog5 ~ail_prog ~statement_locs:_ ~paused:_ ->
       let _, sigma = ail_prog in
       Cerb_colour.without_colour
-        (fun () ->
-          TestGeneration.run
-            ~output_dir
-            ~filename
-            ~max_unfolds
-            sigma
-            prog5
-            testing_framework)
+        (fun () -> TestGeneration.run ~output_dir ~filename ~max_unfolds sigma prog5)
         ();
       Resultat.return ())
 
@@ -779,12 +771,6 @@ module Test_generation_flags = struct
       "[Experimental] Set the maximum number of unfolds for recursive predicates"
     in
     Arg.(value & opt int 5 & info [ "max-unfolds" ] ~doc)
-
-
-  let testing_framework =
-    let doc = "[Experimental] Specify the testing framework used by generated tests" in
-    Arg.(
-      value & opt (enum TestGeneration.test_frameworks) GTest & info [ "framework" ] ~doc)
 end
 
 let generate_tests_cmd =
@@ -805,7 +791,6 @@ let generate_tests_cmd =
     $ Common_flags.magic_comment_char_dollar
     $ Test_generation_flags.output_test_dir
     $ Test_generation_flags.test_max_unfolds
-    $ Test_generation_flags.testing_framework
   in
   let doc =
     "Generates RapidCheck tests for all functions in [FILE] with CN specifications.\n\
