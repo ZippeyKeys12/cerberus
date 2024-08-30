@@ -41,39 +41,26 @@ let rec compile_it_lat
     return (GT.let_ (backtrack_num, (x, GT.return_ it (IT.loc it)), gt') loc)
   | Resource ((x, (P { name = Owned (ct, _); pointer; iargs = _ }, bt)), (loc, _), lat')
     ->
-    (match pointer with
-     | IT (Sym p, _, _) ->
-       let@ gt' = compile_it_lat preds iargs (SymSet.add p allocs) lat' in
-       let gt_asgn = GT.asgn_ ((pointer, ct), IT.sym_ (x, bt, loc), gt') loc in
-       let gt_val =
-         if SymSet.mem x iargs then
-           gt_asgn
-         else
-           GT.let_ (backtrack_num, (x, GT.uniform_ (bt, generated_size) loc), gt_asgn) loc
-       in
-       if SymSet.mem p iargs || SymSet.mem p allocs then
-         return gt_val
-       else (
-         let gt_pointer = GT.alloc_ (IT.sizeOf_ ct loc) loc in
-         return (GT.let_ (backtrack_num, (p, gt_pointer), gt_val) loc))
-     | IT (ArrayShift { base = IT (Sym p, _, loc'); ct = ct'; index }, bt, _) ->
-       let@ gt' = compile_it_lat preds iargs (SymSet.add p allocs) lat' in
-       let gt_asgn = GT.asgn_ ((pointer, ct), IT.sym_ (x, bt, loc), gt') loc in
-       let gt_val =
-         if SymSet.mem x iargs then
-           gt_asgn
-         else
-           GT.let_ (backtrack_num, (x, GT.uniform_ (bt, generated_size) loc), gt_asgn) loc
-       in
-       if SymSet.mem p iargs || SymSet.mem p allocs then
-         return gt_val
-       else (
-         let gt_size =
-           IT.add_ (IT.sizeOf_ ct loc, IT.mul_ (index, IT.sizeOf_ ct' loc') loc') loc
-         in
-         let gt_pointer = GT.alloc_ gt_size loc in
-         return (GT.let_ (backtrack_num, (p, gt_pointer), gt_val) loc))
-     | _ -> failwith ("unsupported : " ^ Pp.plain (IT.pp pointer)))
+    let p, gt_size =
+      match pointer with
+      | IT (Sym p, _, _) -> (p, IT.sizeOf_ ct loc)
+      | IT (ArrayShift { base = IT (Sym p, _, loc'); ct = ct'; index }, _, _) ->
+        (p, IT.add_ (IT.sizeOf_ ct loc, IT.mul_ (index, IT.sizeOf_ ct' loc') loc') loc)
+      | _ -> failwith ("unsupported : " ^ Pp.plain (IT.pp pointer))
+    in
+    let@ gt' = compile_it_lat preds iargs (SymSet.add p allocs) lat' in
+    let gt_asgn = GT.asgn_ ((pointer, ct), IT.sym_ (x, bt, loc), gt') loc in
+    let gt_val =
+      if SymSet.mem x iargs then
+        gt_asgn
+      else
+        GT.let_ (backtrack_num, (x, GT.uniform_ (bt, generated_size) loc), gt_asgn) loc
+    in
+    if SymSet.mem p iargs || SymSet.mem p allocs then
+      return gt_val
+    else (
+      let gt_pointer = GT.alloc_ gt_size loc in
+      return (GT.let_ (backtrack_num, (p, gt_pointer), gt_val) loc))
   | Resource
       ((x, (P { name = PName fsym; pointer; iargs = args_its' }, bt)), (loc, _), lat') ->
     let@ gt' = compile_it_lat preds iargs allocs lat' in
