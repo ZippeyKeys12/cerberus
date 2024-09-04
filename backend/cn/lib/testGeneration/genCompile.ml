@@ -1,12 +1,15 @@
 module IT = IndexTerms
 module BT = BaseTypes
 module AT = ArgumentTypes
+module LC = LogicalConstraints
 module LAT = LogicalArgumentTypes
 module RP = ResourcePredicates
+module RET = ResourceTypes
 module GBT = GenBaseTypes
 module GT = GenTerms
 module GD = GenDefinitions
 module SymSet = Set.Make (Sym)
+module SymMap = Map.Make (Sym)
 
 type s = GD.context
 
@@ -28,70 +31,183 @@ let backtrack_num = 10
 
 let generated_size = 100
 
+let compile_vars (generated : SymSet.t) (lat : IT.t LAT.t) : SymSet.t * (GT.t -> GT.t) =
+  let rec aux (xbts : (Sym.t * BT.t) list) : GT.t -> GT.t =
+    match xbts with
+    | (x, bt) :: xbts' ->
+      let here = Locations.other __FUNCTION__ in
+      let gt_gen =
+        if BT.equal bt BT.Loc then
+          GT.alloc_ (IT.num_lit_ Z.zero Memory.size_bt here) here
+        else
+          GT.uniform_ (bt, generated_size) here
+      in
+      fun (gt : GT.t) ->
+        let gt' = aux xbts' gt in
+        GT.let_ (backtrack_num, (x, gt_gen), gt') here
+    | [] -> fun gt -> gt
+  in
+  let xs, xbts =
+    match lat with
+    | Define ((x, it), _info, _) -> (SymSet.singleton x, IT.free_vars_bts it)
+    | Resource ((x, (ret, _)), _, _) -> (SymSet.singleton x, RET.free_vars_bts ret)
+    | Constraint (lc, _, _) -> (SymSet.empty, LC.free_vars_bts lc)
+    | I it -> (SymSet.empty, IT.free_vars_bts it)
+  in
+  let xbts =
+    xbts |> SymMap.filter (fun x _ -> not (SymSet.mem x generated)) |> SymMap.bindings
+  in
+  let generated =
+    xbts |> List.map fst |> SymSet.of_list |> SymSet.union generated |> SymSet.union xs
+  in
+  (generated, aux xbts)
+
+
 let rec compile_it_lat
   (preds : Mucore.T.resource_predicates)
-  (iargs : SymSet.t)
-  (allocs : SymSet.t)
+  (generated : SymSet.t)
   (lat : IT.t LAT.t)
   : GT.t m
   =
-  match lat with
-  | Define ((x, it), (loc, _), lat') ->
-    let@ gt' = compile_it_lat preds iargs allocs lat' in
-    return (GT.let_ (backtrack_num, (x, GT.return_ it (IT.loc it)), gt') loc)
-  | Resource ((x, (P { name = Owned (ct, _); pointer; iargs = _ }, bt)), (loc, _), lat')
-    ->
-    let p, gt_size =
-      match pointer with
-      | IT (Sym p, _, _) -> (p, IT.sizeOf_ ct loc)
-      | IT (ArrayShift { base = IT (Sym p, _, loc'); ct = ct'; index }, _, _) ->
-        (p, IT.add_ (IT.sizeOf_ ct loc, IT.mul_ (index, IT.sizeOf_ ct' loc') loc') loc)
-      | _ -> failwith ("unsupported : " ^ Pp.plain (IT.pp pointer))
-    in
-    let@ gt' = compile_it_lat preds iargs (SymSet.add p allocs) lat' in
-    let gt_asgn = GT.asgn_ ((pointer, ct), IT.sym_ (x, bt, loc), gt') loc in
-    let gt_val =
-      if SymSet.mem x iargs then
-        gt_asgn
-      else
-        GT.let_ (backtrack_num, (x, GT.uniform_ (bt, generated_size) loc), gt_asgn) loc
-    in
-    if SymSet.mem p iargs || SymSet.mem p allocs then
+  (* Generate any free variables needed *)
+  let generated, f_gt_init = compile_vars generated lat in
+  (* Compile *)
+  let@ gt =
+    match lat with
+    | Define ((x, it), (loc, _), lat') ->
+      let@ gt' = compile_it_lat preds generated lat' in
+      return (GT.let_ (backtrack_num, (x, GT.return_ it (IT.loc it)), gt') loc)
+    | Resource ((x, (P { name = Owned (ct, _); pointer; iargs = _ }, bt)), (loc, _), lat')
+      ->
+      let@ gt' = compile_it_lat preds generated lat' in
+      let gt_asgn = GT.asgn_ ((pointer, ct), IT.sym_ (x, bt, loc), gt') loc in
+      let gt_val =
+        if SymSet.mem x generated then
+          gt_asgn
+        else
+          GT.let_ (backtrack_num, (x, GT.uniform_ (bt, generated_size) loc), gt_asgn) loc
+      in
       return gt_val
-    else (
-      let gt_pointer = GT.alloc_ gt_size loc in
-      return (GT.let_ (backtrack_num, (p, gt_pointer), gt_val) loc))
-  | Resource
-      ((x, (P { name = PName fsym; pointer; iargs = args_its' }, bt)), (loc, _), lat') ->
-    let@ gt' = compile_it_lat preds iargs allocs lat' in
-    let pred = List.assoc Sym.equal fsym preds in
-    let arg_syms = pred.pointer :: fst (List.split pred.iargs) in
-    let arg_its = pointer :: args_its' in
-    let args = List.combine arg_syms arg_its in
-    let gt_call = GT.call_ (fsym, args) bt loc in
-    let gt_let = GT.let_ (backtrack_num, (x, gt_call), gt') loc in
-    let desired_iargs = List.map fst args in
-    let gd : GD.t =
-      { name = fsym;
-        iargs =
-          (pred.pointer, BT.Loc) :: pred.iargs
-          |> List.filter (fun (x, _) -> List.mem Sym.equal x desired_iargs)
-          |> List.map (fun (x, bt) -> (x, GBT.of_bt bt));
-        oargs =
-          pred.oarg_bt
-          :: (pred.iargs
-              |> List.filter (fun (x, _) -> not (List.mem Sym.equal x desired_iargs))
-              |> List.map snd)
-          |> List.map GBT.of_bt;
-        body = None
-      }
-    in
-    fun s -> (gt_let, GD.add_context gd s)
-  | Constraint (lc, (loc, _), lat') ->
-    let@ gt' = compile_it_lat preds iargs allocs lat' in
-    return (GT.assert_ ([ lc ], gt') loc)
-  | I it -> return (GT.return_ it (IT.loc it))
-  | _ -> failwith __LOC__
+    | Resource
+        ((x, (P { name = PName fsym; pointer; iargs = args_its' }, bt)), (loc, _), lat')
+      ->
+      (* Recurse *)
+      let@ gt' = compile_it_lat preds generated lat' in
+      (* Get arguments *)
+      let pred = List.assoc Sym.equal fsym preds in
+      let arg_syms = pred.pointer :: fst (List.split pred.iargs) in
+      let arg_its = pointer :: args_its' in
+      let args = List.combine arg_syms arg_its in
+      (* Add request *)
+      let desired_iargs = List.map fst args in
+      let gd : GD.t =
+        { name = fsym;
+          iargs =
+            (pred.pointer, BT.Loc) :: pred.iargs
+            |> List.filter (fun (x, _) -> List.mem Sym.equal x desired_iargs)
+            |> List.map (fun (x, bt) -> (x, GBT.of_bt bt));
+          oargs =
+            pred.oarg_bt
+            :: (pred.iargs
+                |> List.filter (fun (x, _) -> not (List.mem Sym.equal x desired_iargs))
+                |> List.map snd)
+            |> List.map GBT.of_bt;
+          body = None
+        }
+      in
+      (* Build [GT.t] *)
+      let gt_call = GT.call_ (fsym, args) bt loc in
+      let gt_let = GT.let_ (backtrack_num, (x, gt_call), gt') loc in
+      fun s -> (gt_let, GD.add_context gd s)
+    | Resource
+        ( ( x,
+            ( Q
+                { name = Owned (ct, _);
+                  pointer;
+                  q = q_sym, _;
+                  q_loc;
+                  step;
+                  permission;
+                  iargs = _
+                },
+              bt ) ),
+          (loc, _),
+          lat' ) ->
+      let@ gt' = compile_it_lat preds generated lat' in
+      let k_bt, v_bt = BT.map_bt bt in
+      let gt_body =
+        let sym_val = Sym.fresh () in
+        let it_q = IT.sym_ (q_sym, k_bt, q_loc) in
+        let it_p = IT.add_ (pointer, IT.mul_ (it_q, step) (IT.loc step)) loc in
+        let gt_asgn =
+          GT.asgn_
+            ( (it_p, ct),
+              IT.sym_ (x, v_bt, loc),
+              GT.return_ (IT.sym_ (sym_val, v_bt, loc)) loc )
+            loc
+        in
+        GT.let_
+          (backtrack_num, (sym_val, GT.uniform_ (v_bt, generated_size) loc), gt_asgn)
+          loc
+      in
+      let gt_map = GT.map_ ((q_sym, k_bt, permission), gt_body) loc in
+      let gt_let = GT.let_ (backtrack_num, (x, gt_map), gt') loc in
+      return gt_let
+    | Resource
+        ( ( x,
+            ( Q
+                { name = PName fsym;
+                  pointer;
+                  q = q_sym, q_bt;
+                  q_loc;
+                  step;
+                  permission;
+                  iargs
+                },
+              bt ) ),
+          (loc, _),
+          lat' ) ->
+      (* Recurse *)
+      let@ gt' = compile_it_lat preds generated lat' in
+      (* Get arguments *)
+      let pred = List.assoc Sym.equal fsym preds in
+      let arg_syms = pred.pointer :: fst (List.split pred.iargs) in
+      let it_q = IT.sym_ (q_sym, q_bt, q_loc) in
+      let it_p = IT.add_ (pointer, IT.mul_ (it_q, step) (IT.loc step)) loc in
+      let arg_its = it_p :: iargs in
+      let args = List.combine arg_syms arg_its in
+      (* Add request *)
+      let desired_iargs = List.map fst args in
+      let gd : GD.t =
+        { name = fsym;
+          iargs =
+            (pred.pointer, BT.Loc) :: pred.iargs
+            |> List.filter (fun (x, _) -> List.mem Sym.equal x desired_iargs)
+            |> List.map (fun (x, bt) -> (x, GBT.of_bt bt));
+          oargs =
+            pred.oarg_bt
+            :: (pred.iargs
+                |> List.filter (fun (x, _) -> not (List.mem Sym.equal x desired_iargs))
+                |> List.map snd)
+            |> List.map GBT.of_bt;
+          body = None
+        }
+      in
+      (* Build [GT.t] *)
+      let gt_body =
+        let sym_val = Sym.fresh () in
+        let gt_call = GT.call_ (fsym, args) bt loc in
+        GT.let_ (backtrack_num, (sym_val, gt_call), gt_call) loc
+      in
+      let gt_map = GT.map_ ((q_sym, q_bt, permission), gt_body) loc in
+      let gt_let = GT.let_ (backtrack_num, (x, gt_map), gt') loc in
+      fun s -> (gt_let, GD.add_context gd s)
+    | Constraint (lc, (loc, _), lat') ->
+      let@ gt' = compile_it_lat preds generated lat' in
+      return (GT.assert_ ([ lc ], gt') loc)
+    | I it -> return (GT.return_ it (IT.loc it))
+  in
+  return (f_gt_init gt)
 
 
 let rec compile_clauses
@@ -103,13 +219,13 @@ let rec compile_clauses
   match cls with
   | [ cl ] ->
     assert (IT.is_true cl.guard);
-    compile_it_lat preds iargs SymSet.empty cl.packing_ft
+    compile_it_lat preds iargs cl.packing_ft
   | cl :: cls' ->
     (* let here = Locations.other __FUNCTION__ in *)
     let it_if = cl.guard in
     (* Add guard as an assertion at the top of the body *)
     (* let lat = LAT.mConstraint (T it_if, (here, None)) cl.packing_ft in *)
-    let@ gt_then = compile_it_lat preds iargs SymSet.empty cl.packing_ft in
+    let@ gt_then = compile_it_lat preds iargs cl.packing_ft in
     let@ gt_else = compile_clauses preds iargs cls' in
     return (GT.ite_ (it_if, gt_then, gt_else) cl.loc)
   | [] -> failwith "unreachable"
@@ -142,8 +258,7 @@ let compile_spec (preds : Mucore.T.resource_predicates) (name : Sym.t) (at : 'a 
   let args, lat = aux at in
   let here = Locations.other __FUNCTION__ in
   let it_ret = IT.tuple_ (args |> List.map snd |> List.map IT.sym_) here in
-  let iargs = SymSet.of_list (List.map fst args) in
-  let@ gt = compile_it_lat preds iargs SymSet.empty (LAT.map (fun _ -> it_ret) lat) in
+  let@ gt = compile_it_lat preds SymSet.empty (LAT.map (fun _ -> it_ret) lat) in
   let gd : GD.t =
     { name;
       iargs = [];

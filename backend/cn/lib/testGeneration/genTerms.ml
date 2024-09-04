@@ -27,6 +27,8 @@ and t = GT of t_ * BT.t * (Locations.t[@equal fun _ _ -> true] [@compare fun _ _
 
 (* Accessors *)
 
+let term (GT (gt_, _, _)) = gt_
+
 let basetype (GT (_, bt, _)) = bt
 
 let bt = basetype
@@ -76,6 +78,10 @@ let ite_ ((it_if, gt_then, gt_else) : IT.t * t * t) loc : t =
   let bt = basetype gt_then in
   assert (BT.equal bt (basetype gt_else));
   GT (ITE (it_if, gt_then, gt_else), bt, loc)
+
+
+let map_ (((i, i_bt, it_perm), gt_inner) : (Sym.t * BT.t * IT.t) * t) loc : t =
+  GT (Map ((i, i_bt, it_perm), gt_inner), BT.make_map_bt i_bt (basetype gt_inner), loc)
 
 
 (* Constructor-checking functions *)
@@ -187,8 +193,7 @@ let rec pp (gt : t) : Pp.document =
     ^^ Sym.pp x
     ^^ space
     ^^ equals
-    ^^ space
-    ^^ pp gt1
+    ^^ nest 2 (break 1 ^^ pp gt1)
     ^^ semi
     ^^ break 1
     ^^ pp gt2
@@ -251,6 +256,54 @@ and suitably_alpha_rename_gen syms x gt =
     alpha_rename_gen x gt
   else
     (x, gt)
+
+
+let rec free_vars_bts_ (gt_ : t_) : BT.t SymMap.t =
+  match gt_ with
+  | Uniform _ -> SymMap.empty
+  | Pick wgts -> free_vars_bts_list (List.map snd wgts)
+  | Alloc it -> IT.free_vars_bts it
+  | Call (_, xits) -> IT.free_vars_bts_list (List.map snd xits)
+  | Asgn ((it_addr, _), it_val, gt') ->
+    free_vars_bts_list
+      [ return_ it_addr Locations.unknown; return_ it_val Locations.unknown; gt' ]
+  | Let (_, x, gt1, gt2) ->
+    SymMap.union
+      (fun _ bt1 bt2 ->
+        assert (BT.equal bt1 bt2);
+        Some bt1)
+      (free_vars_bts gt1)
+      (SymMap.remove x (free_vars_bts gt2))
+  | Return it -> IT.free_vars_bts it
+  | Assert (lcs, gt') ->
+    free_vars_bts_list
+      (gt'
+       :: List.map
+            (fun lc ->
+              assert_
+                ([ lc ], return_ (IT.unit_ Locations.unknown) Locations.unknown)
+                Locations.unknown)
+            lcs)
+  | ITE (it_if, gt_then, gt_else) ->
+    free_vars_bts_list [ return_ it_if Locations.unknown; gt_then; gt_else ]
+  | Map ((i, _bt, it_perm), gt') ->
+    SymMap.remove i (free_vars_bts_list [ return_ it_perm Locations.unknown; gt' ])
+
+
+and free_vars_bts (GT (gt_, _, _) : t) : BT.t SymMap.t = free_vars_bts_ gt_
+
+and free_vars_bts_list : t list -> BT.t SymMap.t =
+  fun xs ->
+  List.fold_left
+    (fun ss t ->
+      SymMap.union
+        (fun _ bt1 bt2 ->
+          assert (BT.equal bt1 bt2);
+          Some bt1)
+        ss
+        (free_vars_bts t))
+    SymMap.empty
+    xs
 
 
 let rec map_gen_pre (f : t -> t) (g : t) : t =

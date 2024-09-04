@@ -8,6 +8,8 @@ type info = t * string option
 
 type path = t list
 
+let unknown = Cerb_location.unknown
+
 let is_unknown_location = Cerb_location.is_unknown_location
 
 let pp loc = Cerb_location.pp_location ~clever:false loc

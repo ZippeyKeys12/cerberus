@@ -16,6 +16,8 @@ type path = t list
 
 val other : string -> t
 
+val unknown : t
+
 val is_unknown_location : t -> bool
 
 val pp : t -> PPrint.document
