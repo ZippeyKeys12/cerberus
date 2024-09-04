@@ -25,8 +25,6 @@ let ( let@ ) (g : 'a m) (f : 'a -> 'b m) : 'b m =
 
 let return (x : 'a) : 'a m = fun s -> (x, s)
 
-let run (f : 'a m) = f []
-
 let backtrack_num = 10
 
 let generated_size = 100
