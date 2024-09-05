@@ -460,9 +460,11 @@ let generate_tests
     ~no_inherit_loc
     ~magic_comment_char_dollar (* Callbacks *)
     ~handle_error
-    ~f:(fun ~prog5 ~ail_prog:_ ~statement_locs:_ ~paused:_ ->
+    ~f:(fun ~prog5 ~ail_prog ~statement_locs:_ ~paused:_ ->
       Cerb_colour.without_colour
-        (fun () -> TestGeneration.run ~output_dir ~filename ~max_unfolds prog5)
+        (fun () ->
+          let _, sigma = ail_prog in
+          TestGeneration.run ~output_dir ~filename ~max_unfolds sigma prog5)
         ();
       Resultat.return ())
 

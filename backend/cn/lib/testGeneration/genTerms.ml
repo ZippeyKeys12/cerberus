@@ -276,14 +276,12 @@ let rec free_vars_bts_ (gt_ : t_) : BT.t SymMap.t =
       (SymMap.remove x (free_vars_bts gt2))
   | Return it -> IT.free_vars_bts it
   | Assert (lcs, gt') ->
-    free_vars_bts_list
-      (gt'
-       :: List.map
-            (fun lc ->
-              assert_
-                ([ lc ], return_ (IT.unit_ Locations.unknown) Locations.unknown)
-                Locations.unknown)
-            lcs)
+    List.fold_left
+      (SymMap.union (fun _ bt1 bt2 ->
+         assert (BT.equal bt1 bt2);
+         Some bt1))
+      SymMap.empty
+      (free_vars_bts gt' :: List.map LC.free_vars_bts lcs)
   | ITE (it_if, gt_then, gt_else) ->
     free_vars_bts_list [ return_ it_if Locations.unknown; gt_then; gt_else ]
   | Map ((i, _bt, it_perm), gt') ->
@@ -304,6 +302,10 @@ and free_vars_bts_list : t list -> BT.t SymMap.t =
         (free_vars_bts t))
     SymMap.empty
     xs
+
+
+let free_vars (gt : t) : SymSet.t =
+  gt |> free_vars_bts |> SymMap.bindings |> List.map fst |> SymSet.of_list
 
 
 let rec map_gen_pre (f : t -> t) (g : t) : t =
@@ -332,10 +334,10 @@ let rec map_gen_post (f : t -> t) (g : t) : t =
     | Pick wgts -> Pick (List.map_snd (map_gen_post f) wgts)
     | Alloc it -> Alloc it
     | Call (fsym, its) -> Call (fsym, its)
-    | Asgn ((it_addr, gt), it_val, g') -> Asgn ((it_addr, gt), it_val, map_gen_post f g')
+    | Asgn ((it_addr, gt), it_val, gt') -> Asgn ((it_addr, gt), it_val, map_gen_post f gt')
     | Let (tries, x, gt, g') -> Let (tries, x, gt, map_gen_post f g')
     | Return it -> Return it
-    | Assert (lcs, g') -> Assert (lcs, map_gen_post f g')
+    | Assert (lcs, gt') -> Assert (lcs, map_gen_post f gt')
     | ITE (it, g_then, g_else) -> ITE (it, map_gen_post f g_then, map_gen_post f g_else)
     | Map ((i, bt, permission), gt') -> Map ((i, bt, permission), map_gen_post f gt')
   in

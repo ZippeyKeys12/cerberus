@@ -29,6 +29,8 @@ let backtrack_num = 10
 
 let generated_size = 100
 
+let cn_return = Sym.fresh_named "cn_return"
+
 let compile_vars (generated : SymSet.t) (lat : IT.t LAT.t) : SymSet.t * (GT.t -> GT.t) =
   let rec aux (xbts : (Sym.t * BT.t) list) : GT.t -> GT.t =
     match xbts with
@@ -105,11 +107,10 @@ let rec compile_it_lat
             |> List.filter (fun (x, _) -> List.mem Sym.equal x desired_iargs)
             |> List.map (fun (x, bt) -> (x, GBT.of_bt bt));
           oargs =
-            pred.oarg_bt
+            (cn_return, pred.oarg_bt)
             :: (pred.iargs
-                |> List.filter (fun (x, _) -> not (List.mem Sym.equal x desired_iargs))
-                |> List.map snd)
-            |> List.map GBT.of_bt;
+                |> List.filter (fun (x, _) -> not (List.mem Sym.equal x desired_iargs)))
+            |> List.map (fun (x, bt) -> (x, GBT.of_bt bt));
           body = None
         }
       in
@@ -183,11 +184,10 @@ let rec compile_it_lat
             |> List.filter (fun (x, _) -> List.mem Sym.equal x desired_iargs)
             |> List.map (fun (x, bt) -> (x, GBT.of_bt bt));
           oargs =
-            pred.oarg_bt
+            (cn_return, pred.oarg_bt)
             :: (pred.iargs
-                |> List.filter (fun (x, _) -> not (List.mem Sym.equal x desired_iargs))
-                |> List.map snd)
-            |> List.map GBT.of_bt;
+                |> List.filter (fun (x, _) -> not (List.mem Sym.equal x desired_iargs)))
+            |> List.map (fun (x, bt) -> (x, GBT.of_bt bt));
           body = None
         }
       in
@@ -255,12 +255,16 @@ let compile_spec (preds : Mucore.T.resource_predicates) (name : Sym.t) (at : 'a 
   in
   let args, lat = aux at in
   let here = Locations.other __FUNCTION__ in
-  let it_ret = IT.tuple_ (args |> List.map snd |> List.map IT.sym_) here in
+  let it_ret =
+    IT.record_
+      (List.map (fun (x, info) -> (Id.id (Sym.pp_string x), IT.sym_ info)) args)
+      here
+  in
   let@ gt = compile_it_lat preds SymSet.empty (LAT.map (fun _ -> it_ret) lat) in
   let gd : GD.t =
     { name;
       iargs = [];
-      oargs = args |> List.map (fun (_, (_, bt, _)) -> bt) |> List.map GBT.of_bt;
+      oargs = args |> List.map (fun (x, (_, bt, _)) -> (x, GBT.of_bt bt));
       body = Some gt
     }
   in

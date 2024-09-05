@@ -4,7 +4,7 @@ module GT = GenTerms
 type t =
   { name : Sym.t;
     iargs : (Sym.t * GBT.t) list;
-    oargs : GBT.t list;
+    oargs : (Sym.t * GBT.t) list;
     body : GT.t option
   }
 [@@deriving eq, ord]
@@ -14,7 +14,11 @@ let pp (gd : t) : Pp.document =
   group
     (string "generator"
      ^^ space
-     ^^ parens (separate_map (comma ^^ space) GBT.pp gd.oargs)
+     ^^ braces
+          (separate_map
+             (comma ^^ space)
+             (fun (x, ty) -> GBT.pp ty ^^ space ^^ Sym.pp x)
+             gd.oargs)
      ^^ space
      ^^ Sym.pp gd.name
      ^^ parens
