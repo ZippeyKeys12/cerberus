@@ -16,7 +16,7 @@ let get_name (syms : Sym.t list) : Sym.t =
   match List.assoc_opt (List.equal Sym.equal) syms !names with
   | Some sym -> sym
   | None ->
-    let doc = string "gen_" ^^ separate_map underscore Sym.pp syms in
+    let doc = string "cn_gen_" ^^ separate_map underscore Sym.pp syms in
     let res_sym = Sym.fresh_named (CF.Pp_utils.to_plain_string doc) in
     names := (syms, res_sym) :: !names;
     res_sym
@@ -52,7 +52,7 @@ let rec compile_gt
         (mk_expr
            (AilEcall (mk_expr (AilEident (Sym.fresh_named "pick_placeholder")), []))) )
   | Alloc it ->
-    let alloc_sym = Sym.fresh_named "malloc" in
+    let alloc_sym = Sym.fresh_named "alloc_placeholder" in
     let b, s, e = compile_it sigma it in
     (b, s, Some (mk_expr (AilEcall (mk_expr (AilEident alloc_sym), [ e ]))))
   | Call (fsym, xits) ->
@@ -88,8 +88,8 @@ let rec compile_gt
     let b1, s1, oe1 = compile_gt sigma name gt1 in
     let e1 = Option.get oe1 in
     let b2, s2, e2 = compile_gt sigma name gt2 in
-    ( b1 @ b2,
-      s1 @ A.[ AilSexpr (mk_expr (AilEassign (mk_expr (AilEident x), e1))) ] @ s2,
+    ( b1 @ [ Utils.create_binding x (CtA.bt_to_ail_ctype bt) ] @ b2,
+      s1 @ A.[ AilSdeclaration [ (x, Some e1) ] ] @ s2,
       e2 )
   | Return it ->
     let b, s, e = compile_it sigma it in

@@ -50,6 +50,8 @@ let compile_vars (generated : SymSet.t) (lat : IT.t LAT.t) : SymSet.t * (GT.t ->
   let xs, xbts =
     match lat with
     | Define ((x, it), _info, _) -> (SymSet.singleton x, IT.free_vars_bts it)
+    | Resource ((x, ((P { name = Owned _; _ } as ret), bt)), _, _) ->
+      (SymSet.singleton x, SymMap.add x bt (RET.free_vars_bts ret))
     | Resource ((x, (ret, _)), _, _) -> (SymSet.singleton x, RET.free_vars_bts ret)
     | Constraint (lc, _, _) -> (SymSet.empty, LC.free_vars_bts lc)
     | I it -> (SymSet.empty, IT.free_vars_bts it)
