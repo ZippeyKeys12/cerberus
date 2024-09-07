@@ -443,6 +443,8 @@ let generate_tests
   Cerb_debug.debug_level := debug_level;
   Pp.print_level := print_level;
   Sym.executable_spec_enabled := true;
+  (* TODO: Maybe change default? *)
+  WellTyped.use_ity := true;
   let handle_error (e : TypeErrors.type_error) =
     let report = TypeErrors.pp_message e.msg in
     Pp.error e.loc report.short (Option.to_list report.descr);

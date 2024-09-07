@@ -30,6 +30,8 @@ let run
   debug_log ("Starting test generation for " ^ filename ^ "\n\n");
   let ctx = prog5 |> GenCompile.compile in
   debug_stage "Compile" (ctx |> GenDefinitions.pp_context |> Pp.plain ~width:80);
+  let ctx = ctx |> GenNormalize.normalize prog5 in
+  debug_stage "Normalize" (ctx |> GenDefinitions.pp_context |> Pp.plain ~width:80);
   let ctx = ctx |> GenOptimize.optimize in
   debug_stage "Optimize" (ctx |> GenDefinitions.pp_context |> Pp.plain ~width:80);
   let ail_prog = ctx |> GenRuntime.compile sigma in

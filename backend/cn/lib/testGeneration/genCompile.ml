@@ -40,7 +40,7 @@ let compile_vars (generated : SymSet.t) (lat : IT.t LAT.t) : SymSet.t * (GT.t ->
         if BT.equal bt BT.Loc then
           GT.alloc_ (IT.num_lit_ Z.zero Memory.size_bt here) here
         else
-          GT.uniform_ (bt, generated_size) here
+          GT.arbitrary_ (bt, generated_size) here
       in
       fun (gt : GT.t) ->
         let gt' = aux xbts' gt in
@@ -87,7 +87,9 @@ let rec compile_it_lat
         if SymSet.mem x generated then
           gt_asgn
         else
-          GT.let_ (backtrack_num, (x, GT.uniform_ (bt, generated_size) loc), gt_asgn) loc
+          GT.let_
+            (backtrack_num, (x, GT.arbitrary_ (bt, generated_size) loc), gt_asgn)
+            loc
       in
       return gt_val
     | Resource
@@ -148,7 +150,7 @@ let rec compile_it_lat
             loc
         in
         GT.let_
-          (backtrack_num, (sym_val, GT.uniform_ (v_bt, generated_size) loc), gt_asgn)
+          (backtrack_num, (sym_val, GT.arbitrary_ (v_bt, generated_size) loc), gt_asgn)
           loc
       in
       let gt_map = GT.map_ ((q_sym, k_bt, permission), gt_body) loc in

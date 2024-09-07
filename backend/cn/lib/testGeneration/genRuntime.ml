@@ -22,6 +22,11 @@ let get_name (syms : Sym.t list) : Sym.t =
     res_sym
 
 
+let bt_to_ctype ?(pred_sym = None) bt =
+  let ct = CtA.bt_to_ail_ctype ~pred_sym bt in
+  if C.ctypeEqual C.void ct then ct else C.Ctype ([], C.Pointer (C.no_qualifiers, C.void))
+
+
 let compile_it (sigma : CF.GenTypes.genTypeCategory A.sigma) it =
   CtA.cn_to_ail_expr_internal sigma.cn_datatypes [] it PassBack
 
@@ -38,7 +43,14 @@ let rec compile_gt
   let mk_expr = Utils.mk_expr ~loc in
   let mk_stmt = Utils.mk_stmt in
   match gt_ with
-  | Uniform (_bt, sz) ->
+  | Arbitrary sz ->
+    ( [],
+      [],
+      Some
+        (mk_expr
+           (AilEcall (mk_expr (AilEident (Sym.fresh_named "arbitrary_placeholder")), [])))
+    )
+  | Uniform sz ->
     ( [],
       [],
       Some
@@ -88,7 +100,7 @@ let rec compile_gt
     let b1, s1, oe1 = compile_gt sigma name gt1 in
     let e1 = Option.get oe1 in
     let b2, s2, e2 = compile_gt sigma name gt2 in
-    ( b1 @ [ Utils.create_binding x (CtA.bt_to_ail_ctype bt) ] @ b2,
+    ( b1 @ [ Utils.create_binding x (bt_to_ctype bt) ] @ b2,
       s1 @ A.[ AilSdeclaration [ (x, Some e1) ] ] @ s2,
       e2 )
   | Return it ->
@@ -130,7 +142,7 @@ let compile_gen_def
   let bt_ret =
     BT.Record (List.map (fun (x, (_, bt, _)) -> (Id.id (Sym.pp_string x), bt)) gd.oargs)
   in
-  let bt_to_ctype = CtA.bt_to_ail_ctype ~pred_sym:(Some name) in
+  let bt_to_ctype = bt_to_ctype ~pred_sym:(Some name) in
   let decl : A.declaration =
     A.Decl_function
       ( false,

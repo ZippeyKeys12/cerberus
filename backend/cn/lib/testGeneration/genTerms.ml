@@ -7,7 +7,8 @@ module SymMap = Map.Make (Sym)
 module SymSet = Set.Make (Sym)
 
 type t_ =
-  | Uniform of BT.t * int (** Generate uniform values *)
+  | Arbitrary of int (** Generate arbitrary values *)
+  | Uniform of int (** Generate uniform values *)
   | Pick of (int * t) list
   (** Pick among a list of options, weighted by the provided [int]s *)
   | Alloc of IT.t (** Allocate an array of a length [IT.t]  and return its address *)
@@ -37,9 +38,9 @@ let loc (GT (_, _, loc)) = loc
 
 (* Smart constructors *)
 
-let uniform_ ((bt, sz) : BT.t * int) (loc : Locations.t) : t =
-  GT (Uniform (bt, sz), bt, loc)
+let arbitrary_ ((bt, sz) : BT.t * int) (loc : Locations.t) : t = GT (Arbitrary sz, bt, loc)
 
+let uniform_ ((bt, sz) : BT.t * int) (loc : Locations.t) : t = GT (Uniform sz, bt, loc)
 
 let pick_ (wgts : (int * t) list) (loc : Locations.t) : t =
   match wgts with
@@ -85,6 +86,12 @@ let map_ (((i, i_bt, it_perm), gt_inner) : (Sym.t * BT.t * IT.t) * t) loc : t =
 
 
 (* Constructor-checking functions *)
+let is_arbitrary_ (gt_ : t_) : bool = match gt_ with Arbitrary _ -> true | _ -> false
+
+let is_arbitrary (gt : t) : bool =
+  let (GT (gt_, _, _)) = gt in
+  is_arbitrary_ gt_
+
 
 let is_uniform_ (gt_ : t_) : bool = match gt_ with Uniform _ -> true | _ -> false
 
@@ -152,9 +159,9 @@ let is_ite (gt : t) : bool =
 let rec pp (gt : t) : Pp.document =
   let open Pp in
   match gt with
-  | GT (Uniform (bt, sz), bt', _here) ->
-    assert (BT.equal bt bt');
-    string "uniform" ^^ angles (BT.pp bt) ^^ parens (int sz)
+  | GT (Arbitrary sz, bt, _here) ->
+    string "arbitrary" ^^ angles (BT.pp bt) ^^ parens (int sz)
+  | GT (Uniform sz, bt, _here) -> string "uniform" ^^ angles (BT.pp bt) ^^ parens (int sz)
   | GT (Pick wgts, _bt, _here) ->
     string "pick"
     ^^ parens
@@ -223,7 +230,8 @@ let rec pp (gt : t) : Pp.document =
 
 let rec subst_ (su : [ `Term of IT.typed | `Rename of Sym.t ] Subst.t) (gt_ : t_) : t_ =
   match gt_ with
-  | Uniform (ty, sz) -> Uniform (ty, sz)
+  | Arbitrary sz -> Arbitrary sz
+  | Uniform sz -> Uniform sz
   | Pick wgts -> Pick (List.map_snd (subst su) wgts)
   | Alloc it -> Alloc (IT.subst su it)
   | Call (fsym, xits) -> Call (fsym, List.map_snd (IT.subst su) xits)
@@ -260,7 +268,7 @@ and suitably_alpha_rename_gen syms x gt =
 
 let rec free_vars_bts_ (gt_ : t_) : BT.t SymMap.t =
   match gt_ with
-  | Uniform _ -> SymMap.empty
+  | Arbitrary _ | Uniform _ -> SymMap.empty
   | Pick wgts -> free_vars_bts_list (List.map snd wgts)
   | Alloc it -> IT.free_vars_bts it
   | Call (_, xits) -> IT.free_vars_bts_list (List.map snd xits)
@@ -312,7 +320,8 @@ let rec map_gen_pre (f : t -> t) (g : t) : t =
   let (GT (gt_, bt, here)) = f g in
   let gt_ =
     match gt_ with
-    | Uniform (ty, sz) -> Uniform (ty, sz)
+    | Arbitrary sz -> Arbitrary sz
+    | Uniform sz -> Uniform sz
     | Pick wgts -> Pick (List.map_snd (map_gen_pre f) wgts)
     | Alloc it -> Alloc it
     | Call (fsym, its) -> Call (fsym, its)
@@ -330,7 +339,8 @@ let rec map_gen_post (f : t -> t) (g : t) : t =
   let (GT (gt_, bt, here)) = g in
   let gt_ =
     match gt_ with
-    | Uniform (ty, sz) -> Uniform (ty, sz)
+    | Arbitrary sz -> Arbitrary sz
+    | Uniform sz -> Uniform sz
     | Pick wgts -> Pick (List.map_snd (map_gen_post f) wgts)
     | Alloc it -> Alloc it
     | Call (fsym, its) -> Call (fsym, its)
