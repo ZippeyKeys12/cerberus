@@ -145,7 +145,7 @@ let rec compile_it_lat
         let gt_asgn =
           GT.asgn_
             ( (it_p, ct),
-              IT.sym_ (x, v_bt, loc),
+              IT.sym_ (sym_val, v_bt, loc),
               GT.return_ (IT.sym_ (sym_val, v_bt, loc)) loc )
             loc
         in
@@ -206,7 +206,7 @@ let rec compile_it_lat
       fun s -> (gt_let, GD.add_context gd s)
     | Constraint (lc, (loc, _), lat') ->
       let@ gt' = compile_it_lat preds generated lat' in
-      return (GT.assert_ ([ lc ], gt') loc)
+      return (GT.assert_ (lc, gt') loc)
     | I it -> return (GT.return_ it (IT.loc it))
   in
   return (f_gt_init gt)

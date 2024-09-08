@@ -24,7 +24,10 @@ let get_name (syms : Sym.t list) : Sym.t =
 
 let bt_to_ctype ?(pred_sym = None) bt =
   let ct = CtA.bt_to_ail_ctype ~pred_sym bt in
-  if C.ctypeEqual C.void ct then ct else C.Ctype ([], C.Pointer (C.no_qualifiers, C.void))
+  if not (C.ctypeEqual C.void ct) then
+    ct
+  else
+    C.Ctype ([], C.Pointer (C.no_qualifiers, C.void))
 
 
 let compile_it (sigma : CF.GenTypes.genTypeCategory A.sigma) it =
@@ -37,7 +40,7 @@ let rec compile_gt
   (gt : GT.t)
   : A.bindings
     * CF.GenTypes.genTypeCategory A.statement_ list
-    * CF.GenTypes.genTypeCategory A.expression option
+    * CF.GenTypes.genTypeCategory A.expression
   =
   let (GT (gt_, bt, loc)) = gt in
   let mk_expr = Utils.mk_expr ~loc in
@@ -46,41 +49,58 @@ let rec compile_gt
   | Arbitrary sz ->
     ( [],
       [],
-      Some
-        (mk_expr
-           (AilEcall (mk_expr (AilEident (Sym.fresh_named "arbitrary_placeholder")), [])))
-    )
+      mk_expr
+        (AilEcall (mk_expr (AilEident (Sym.fresh_named "arbitrary_placeholder")), [])) )
   | Uniform sz ->
+    let gen =
+      match bt with
+      | Bits (Unsigned, bits) -> "u" ^ string_of_int bits
+      | Bits (Signed, bits) -> "i" ^ string_of_int bits
+      | _ -> failwith __LOC__
+    in
     ( [],
       [],
-      Some
-        (mk_expr
-           (AilEcall (mk_expr (AilEident (Sym.fresh_named "uniform_placeholder")), [])))
+      A.(
+        mk_expr
+          (AilEcall (mk_expr (AilEident (Sym.fresh_named ("cn_gen_uniform_" ^ gen))), [])))
     )
   | Pick wgts ->
     ( [],
       [],
-      Some
-        (mk_expr
-           (AilEcall (mk_expr (AilEident (Sym.fresh_named "pick_placeholder")), []))) )
+      mk_expr (AilEcall (mk_expr (AilEident (Sym.fresh_named "pick_placeholder")), [])) )
   | Alloc it ->
     let alloc_sym = Sym.fresh_named "alloc_placeholder" in
     let b, s, e = compile_it sigma it in
-    (b, s, Some (mk_expr (AilEcall (mk_expr (AilEident alloc_sym), [ e ]))))
+    (b, s, mk_expr (AilEcall (mk_expr (AilEident alloc_sym), [ e ])))
   | Call (fsym, xits) ->
     let sym = get_name (fsym :: List.map fst xits) in
-    ( [],
-      [],
-      Some
-        (mk_expr
-           (AilEcall (mk_expr (AilEident (Sym.fresh_named "call_placeholder")), []))) )
+    let b, s, es =
+      xits
+      |> List.map snd
+      |> List.map (compile_it sigma)
+      |> List.fold_left
+           (fun (b2, s2, es) (b1, s1, e) -> (b1 @ b2, s1 @ s2, es @ [ e ]))
+           ([], [], [])
+    in
+    (b, s, mk_expr (AilEcall (mk_expr (AilEident sym), List.rev es)))
   | Asgn ((it_addr, ct), it_val, gt') ->
     let b1, s1, e1 = compile_it sigma it_addr in
     let b2, s2, e2 = compile_it sigma it_val in
     let ownership_sym = Sym.fresh_named "cn_assume_ownership" in
     let s3 =
       A.
-        [ AilSexpr (mk_expr (AilEassign (e1, e2)));
+        [ AilSexpr
+            (mk_expr
+               (AilEassign
+                  ( mk_expr
+                      (AilEunary
+                         ( Indirection,
+                           mk_expr
+                             (AilEcast
+                                ( C.no_qualifiers,
+                                  C.mk_ctype_pointer C.no_qualifiers (Sctypes.to_ctype ct),
+                                  e1 )) )),
+                    e2 )));
           AilSexpr
             (mk_expr
                (AilEcall
@@ -97,15 +117,12 @@ let rec compile_gt
     let b4, s4, oe4 = compile_gt sigma name gt' in
     (b1 @ b2 @ b4, s1 @ s2 @ s3 @ s4, oe4)
   | Let (backtracks, x, gt1, gt2) ->
-    let b1, s1, oe1 = compile_gt sigma name gt1 in
-    let e1 = Option.get oe1 in
+    let b1, s1, e1 = compile_gt sigma name gt1 in
     let b2, s2, e2 = compile_gt sigma name gt2 in
-    ( b1 @ [ Utils.create_binding x (bt_to_ctype bt) ] @ b2,
+    ( b1 @ [ Utils.create_binding x (bt_to_ctype (GT.bt gt1)) ] @ b2,
       s1 @ A.[ AilSdeclaration [ (x, Some e1) ] ] @ s2,
       e2 )
-  | Return it ->
-    let b, s, e = compile_it sigma it in
-    (b, s, Some e)
+  | Return it -> compile_it sigma it
   | Assert (lcs, gt') ->
     compile_gt sigma name gt'
     (* ( [],
@@ -115,23 +132,70 @@ let rec compile_gt
        (AilEcall (mk_expr (AilEident (Sym.fresh_named "assert_placeholder")), []))) ) *)
   | ITE (it_if, gt_then, gt_else) ->
     let b_if, s_if, e_if = compile_it sigma it_if in
-    let b_then, s_then, oe_then = compile_gt sigma name gt_then in
-    let e_then = Option.get oe_then in
-    let b_else, s_else, oe_else = compile_gt sigma name gt_else in
-    let e_else = Option.get oe_else in
-    ( b_if,
+    let b_then, s_then, e_then = compile_gt sigma name gt_then in
+    let b_else, s_else, e_else = compile_gt sigma name gt_else in
+    let res_sym = Sym.fresh () in
+    let res_expr = mk_expr (AilEident res_sym) in
+    let res_binding = Utils.create_binding res_sym (bt_to_ctype bt) in
+    let res_stmt_ e = A.(AilSexpr (mk_expr (AilEassign (res_expr, e)))) in
+    ( b_if @ [ res_binding ],
       (s_if
        @ A.
-           [ AilSif
+           [ AilSdeclaration [ (res_sym, None) ];
+             AilSif
                ( CtA.wrap_with_convert_from_cn_bool e_if,
                  mk_stmt
-                   (AilSblock (b_then, List.map mk_stmt (s_then @ [ AilSreturn e_then ]))),
+                   (AilSblock (b_then, List.map mk_stmt (s_then @ [ res_stmt_ e_then ]))),
                  mk_stmt
-                   (AilSblock (b_else, List.map mk_stmt (s_else @ [ AilSreturn e_else ])))
+                   (AilSblock (b_else, List.map mk_stmt (s_else @ [ res_stmt_ e_else ])))
                )
            ]),
-      None )
-  | Map ((x, bt, it), gt') -> compile_gt sigma name gt'
+      res_expr )
+  | Map ((i_sym, i_bt, it), gt') ->
+    let i_it = IT.sym_ (i_sym, i_bt, loc) in
+    let min, max =
+      match i_bt with Bits (sgn, sz) -> BT.bits_range (sgn, sz) | _ -> failwith __LOC__
+    in
+    let b_start, s_start, e_start = compile_it sigma (IT.num_lit_ min i_bt loc) in
+    let (AnnotatedExpression (_, _, _, e_start_)) = e_start in
+    let b_end, s_end, e_end =
+      compile_it sigma (IT.lt_ (i_it, IT.num_lit_ max i_bt loc) loc)
+    in
+    let b_perm, s_perm, e_perm = compile_it sigma it in
+    let sym_map = Sym.fresh () in
+    let b_map = Utils.create_binding sym_map (bt_to_ctype bt) in
+    let s_map =
+      A.(
+        AilSdeclaration
+          [ ( sym_map,
+              Some
+                (mk_expr
+                   (AilEcall (mk_expr (AilEident (Sym.fresh_named "map_create")), []))) )
+          ])
+    in
+    let b_body, s_body, e_body = compile_gt sigma name gt' in
+    let s_set =
+      A.(
+        AilSexpr
+          (mk_expr
+             (AilEcall
+                ( mk_expr (AilEident (Sym.fresh_pretty "cn_map_set")),
+                  List.map mk_expr [ AilEident sym_map; AilEident i_sym ] @ [ e_body ] ))))
+    in
+    let s_loop =
+      A.(
+        AilSwhile
+          ( e_perm,
+            mk_stmt
+              (AilSif
+                 ( e_perm,
+                   mk_stmt (AilSblock (b_body, List.map mk_stmt (s_body @ [ s_set ]))),
+                   mk_stmt AilSskip )),
+            0 ))
+    in
+    ( b_start @ b_end @ b_perm @ [ b_map ],
+      s_start @ s_end @ s_perm @ [ s_map; s_loop ],
+      mk_expr (AilEident sym_map) )
 
 
 let compile_gen_def
@@ -157,15 +221,15 @@ let compile_gen_def
   let sigma_decl : A.sigma_declaration =
     (name, (Locations.unknown, CF.Annot.Attrs [], decl))
   in
-  let b, s, oe = compile_gt sigma name (Option.get gd.body) in
-  let s = match oe with Some e -> s @ A.[ AilSreturn e ] | None -> s in
+  let b, s, e = compile_gt sigma name (Option.get gd.body) in
   let sigma_def : CF.GenTypes.genTypeCategory A.sigma_function_definition =
     ( name,
       ( Locations.unknown,
         0,
         CF.Annot.Attrs [],
         List.map fst gd.iargs,
-        Utils.mk_stmt (A.AilSblock (b, List.map Utils.mk_stmt s)) ) )
+        Utils.mk_stmt (A.AilSblock (b, List.map Utils.mk_stmt (s @ A.[ AilSreturn e ])))
+      ) )
   in
   (sigma_decl, sigma_def)
 

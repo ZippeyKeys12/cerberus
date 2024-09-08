@@ -18,7 +18,7 @@ type t_ =
   (** Claim ownership and assign a value to a memory location *)
   | Let of int * Sym.t * t * t (** Monadic bind *)
   | Return of IT.t (** Monadic return *)
-  | Assert of LC.t list * t (** Assert some [LC.t] are true, backtracking otherwise *)
+  | Assert of LC.t * t (** Assert some [LC.t] are true, backtracking otherwise *)
   | ITE of IT.t * t * t (** If-then-else *)
   | Map of (Sym.t * BT.t * IT.t) * t
 [@@deriving eq, ord]
@@ -71,8 +71,8 @@ let let_ ((retries, (x, gt1), gt2) : int * (Sym.t * t) * t) (loc : Locations.t) 
 
 let return_ (it : IT.t) (loc : Locations.t) : t = GT (Return it, IT.bt it, loc)
 
-let assert_ ((lcs, gt') : LC.t list * t) (loc : Locations.t) : t =
-  GT (Assert (lcs, gt'), basetype gt', loc)
+let assert_ ((lc, gt') : LC.t * t) (loc : Locations.t) : t =
+  GT (Assert (lc, gt'), basetype gt', loc)
 
 
 let ite_ ((it_if, gt_then, gt_else) : IT.t * t * t) loc : t =
@@ -205,9 +205,9 @@ let rec pp (gt : t) : Pp.document =
     ^^ break 1
     ^^ pp gt2
   | GT (Return it, _bt, _here) -> string "return" ^^ space ^^ IT.pp it
-  | GT (Assert (lcs, gt'), _bt, _here) ->
+  | GT (Assert (lc, gt'), _bt, _here) ->
     string "assert"
-    ^^ parens (nest 2 (break 1 ^^ separate_map (comma ^^ break 1) LC.pp lcs) ^^ break 1)
+    ^^ parens (nest 2 (break 1 ^^ LC.pp lc) ^^ break 1)
     ^^ semi
     ^^ break 1
     ^^ pp gt'
@@ -241,7 +241,7 @@ let rec subst_ (su : [ `Term of IT.typed | `Rename of Sym.t ] Subst.t) (gt_ : t_
     let x, gt2 = suitably_alpha_rename_gen su.relevant x gt2 in
     Let (tries, x, subst su gt1, subst su gt2)
   | Return it -> Return (IT.subst su it)
-  | Assert (lcs, gt') -> Assert (List.map (LC.subst su) lcs, subst su gt')
+  | Assert (lc, gt') -> Assert (LC.subst su lc, subst su gt')
   | ITE (it, gt_then, gt_else) -> ITE (IT.subst su it, subst su gt_then, subst su gt_else)
   | Map ((i, bt, permission), gt') ->
     let i', permission = IT.suitably_alpha_rename su.relevant i permission in
@@ -283,13 +283,12 @@ let rec free_vars_bts_ (gt_ : t_) : BT.t SymMap.t =
       (free_vars_bts gt1)
       (SymMap.remove x (free_vars_bts gt2))
   | Return it -> IT.free_vars_bts it
-  | Assert (lcs, gt') ->
-    List.fold_left
-      (SymMap.union (fun _ bt1 bt2 ->
-         assert (BT.equal bt1 bt2);
-         Some bt1))
-      SymMap.empty
-      (free_vars_bts gt' :: List.map LC.free_vars_bts lcs)
+  | Assert (lc, gt') ->
+    (SymMap.union (fun _ bt1 bt2 ->
+       assert (BT.equal bt1 bt2);
+       Some bt1))
+      (free_vars_bts gt')
+      (LC.free_vars_bts lc)
   | ITE (it_if, gt_then, gt_else) ->
     free_vars_bts_list [ return_ it_if Locations.unknown; gt_then; gt_else ]
   | Map ((i, _bt, it_perm), gt') ->

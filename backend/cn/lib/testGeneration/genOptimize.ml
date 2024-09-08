@@ -20,15 +20,14 @@ let inline_just_terms (gt : GT.t) : GT.t =
   GT.map_gen_pre aux gt
 
 
-let remove_unused (gt : GT.t) : GT.t =
-  let aux (gt : GT.t) : GT.t =
-    let (GT (gt_, _, _)) = gt in
-    match gt_ with
-    | Let (_, x, _, gt') when not (SymSet.mem x (GT.free_vars gt')) -> gt'
-    | _ -> gt
-  in
-  GT.map_gen_post aux gt
-
+(* let remove_unused (gt : GT.t) : GT.t =
+   let aux (gt : GT.t) : GT.t =
+   let (GT (gt_, _, _)) = gt in
+   match gt_ with
+   | Let (_, x, _, gt') when not (SymSet.mem x (GT.free_vars gt')) -> gt'
+   | _ -> gt
+   in
+   GT.map_gen_post aux gt *)
 
 type config =
   { inline_just_terms : bool;
@@ -38,7 +37,7 @@ type config =
 let all_passes = { inline_just_terms = true; remove_unused = true }
 
 let get_first_pass (cfg : config) : pass =
-  [ (if cfg.remove_unused then Some remove_unused else None) ]
+  [ (if cfg.remove_unused then (* Some remove_unused *) None else None) ]
   |> List.map Option.to_list
   |> List.flatten
   |> List.fold_left (fun acc pass gt -> pass (acc gt)) (fun gt -> gt)
