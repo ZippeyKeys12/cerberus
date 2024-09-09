@@ -28,21 +28,14 @@ let run
   if Option.is_some prog5.mu_main then
     failwith "Cannot test a file with a `main` function";
   debug_log ("Starting test generation for " ^ filename ^ "\n\n");
+  let filename_base = filename |> Filename.basename |> Filename.chop_extension in
   let ctx = prog5 |> GenCompile.compile in
   debug_stage "Compile" (ctx |> GenDefinitions.pp_context |> Pp.plain ~width:80);
   let ctx = ctx |> GenNormalize.normalize prog5 in
   debug_stage "Normalize" (ctx |> GenDefinitions.pp_context |> Pp.plain ~width:80);
   let ctx = ctx |> GenOptimize.optimize in
   debug_stage "Optimize" (ctx |> GenDefinitions.pp_context |> Pp.plain ~width:80);
-  let ail_prog = ctx |> GenRuntime.compile sigma in
-  debug_stage
-    "Runtime"
-    (ail_prog
-     |> Cerb_frontend.Pp_ail.pp_program ~executable_spec:true ~show_include:true
-     |> Pp.plain ~width:80);
-  let oc = Stdlib.open_out (Filename.concat output_dir "gen.c") in
-  output_string
-    oc
-    (ail_prog
-     |> Cerb_frontend.Pp_ail.pp_program ~executable_spec:true ~show_include:true
-     |> Pp.plain ~width:80)
+  let doc = ctx |> GenRuntime.compile sigma in
+  debug_stage "Runtime" (Pp.plain ~width:80 doc);
+  let oc = Stdlib.open_out (Filename.concat output_dir (filename_base ^ "_gen.h")) in
+  output_string oc (Pp.plain ~width:80 doc)

@@ -27,7 +27,7 @@ let return (x : 'a) : 'a m = fun s -> (x, s)
 
 let backtrack_num = 10
 
-let generated_size = 100
+let generated_size (bt : BT.t) : int = match bt with Datatype _ -> 100 | _ -> -1
 
 let cn_return = Sym.fresh_named "cn_return"
 
@@ -40,7 +40,7 @@ let compile_vars (generated : SymSet.t) (lat : IT.t LAT.t) : SymSet.t * (GT.t ->
         if BT.equal bt BT.Loc then
           GT.alloc_ (IT.num_lit_ Z.zero Memory.size_bt here) here
         else
-          GT.arbitrary_ (bt, generated_size) here
+          GT.arbitrary_ (bt, generated_size bt) here
       in
       fun (gt : GT.t) ->
         let gt' = aux xbts' gt in
@@ -88,7 +88,7 @@ let rec compile_it_lat
           gt_asgn
         else
           GT.let_
-            (backtrack_num, (x, GT.arbitrary_ (bt, generated_size) loc), gt_asgn)
+            (backtrack_num, (x, GT.arbitrary_ (bt, generated_size bt) loc), gt_asgn)
             loc
       in
       return gt_val
@@ -150,7 +150,9 @@ let rec compile_it_lat
             loc
         in
         GT.let_
-          (backtrack_num, (sym_val, GT.arbitrary_ (v_bt, generated_size) loc), gt_asgn)
+          ( backtrack_num,
+            (sym_val, GT.arbitrary_ (v_bt, generated_size v_bt) loc),
+            gt_asgn )
           loc
       in
       let gt_map = GT.map_ ((q_sym, k_bt, permission), gt_body) loc in
