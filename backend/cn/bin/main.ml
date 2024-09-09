@@ -435,6 +435,8 @@ let generate_tests
   use_peval
   no_inherit_loc
   magic_comment_char_dollar
+  (* Executable spec *)
+    with_ownership_checking
   (* Test Generation *)
     output_dir
   max_unfolds
@@ -462,11 +464,21 @@ let generate_tests
     ~no_inherit_loc
     ~magic_comment_char_dollar (* Callbacks *)
     ~handle_error
-    ~f:(fun ~prog5 ~ail_prog ~statement_locs:_ ~paused:_ ->
+    ~f:(fun ~prog5 ~ail_prog ~statement_locs ~paused:_ ->
       Cerb_colour.without_colour
         (fun () ->
           let _, sigma = ail_prog in
-          TestGeneration.run ~output_dir ~filename ~max_unfolds sigma prog5)
+          TestGeneration.run ~output_dir ~filename ~max_unfolds sigma prog5;
+          Executable_spec.main
+            ~with_ownership_checking
+            ~with_test_gen:true
+            ~copy_source_dir:false
+            filename
+            ail_prog
+            None
+            (Some output_dir)
+            prog5
+            statement_locs)
         ();
       Resultat.return ())
 
@@ -843,6 +855,7 @@ let generate_tests_cmd =
     $ Common_flags.use_peval
     $ Common_flags.no_inherit_loc
     $ Common_flags.magic_comment_char_dollar
+    $ Executable_spec_flags.with_ownership_checking
     $ Test_generation_flags.output_test_dir
     $ Test_generation_flags.test_max_unfolds
   in
