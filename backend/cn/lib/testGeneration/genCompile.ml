@@ -27,8 +27,6 @@ let return (x : 'a) : 'a m = fun s -> (x, s)
 
 let backtrack_num = 10
 
-let generated_size (bt : BT.t) : int = match bt with Datatype _ -> 100 | _ -> -1
-
 let cn_return = Sym.fresh_named "cn_return"
 
 let compile_vars (generated : SymSet.t) (lat : IT.t LAT.t) : SymSet.t * (GT.t -> GT.t) =
@@ -36,12 +34,7 @@ let compile_vars (generated : SymSet.t) (lat : IT.t LAT.t) : SymSet.t * (GT.t ->
     match xbts with
     | (x, bt) :: xbts' ->
       let here = Locations.other __FUNCTION__ in
-      let gt_gen =
-        if BT.equal bt BT.Loc then
-          GT.alloc_ (IT.num_lit_ Z.zero Memory.size_bt here) here
-        else
-          GT.arbitrary_ (bt, generated_size bt) here
-      in
+      let gt_gen = GT.arbitrary_ bt here in
       fun (gt : GT.t) ->
         let gt' = aux xbts' gt in
         GT.let_ (backtrack_num, (x, gt_gen), gt') here
@@ -87,9 +80,7 @@ let rec compile_it_lat
         if SymSet.mem x generated then
           gt_asgn
         else
-          GT.let_
-            (backtrack_num, (x, GT.arbitrary_ (bt, generated_size bt) loc), gt_asgn)
-            loc
+          GT.let_ (backtrack_num, (x, GT.arbitrary_ bt loc), gt_asgn) loc
       in
       return gt_val
     | Resource
@@ -149,11 +140,7 @@ let rec compile_it_lat
               GT.return_ (IT.sym_ (sym_val, v_bt, loc)) loc )
             loc
         in
-        GT.let_
-          ( backtrack_num,
-            (sym_val, GT.arbitrary_ (v_bt, generated_size v_bt) loc),
-            gt_asgn )
-          loc
+        GT.let_ (backtrack_num, (sym_val, GT.arbitrary_ v_bt loc), gt_asgn) loc
       in
       let gt_map = GT.map_ ((q_sym, k_bt, permission), gt_body) loc in
       let gt_let = GT.let_ (backtrack_num, (x, gt_map), gt') loc in

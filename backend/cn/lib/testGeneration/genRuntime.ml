@@ -44,20 +44,20 @@ let rec compile_gt
   let mk_expr = Utils.mk_expr ~loc in
   let mk_stmt = Utils.mk_stmt in
   match gt_ with
-  | Arbitrary _ ->
-    ( [],
-      [],
-      mk_expr
-        (AilEcall (mk_expr (AilEident (Sym.fresh_named "arbitrary_placeholder")), [])) )
-    (* failwith __LOC__ *)
+  | Arbitrary -> failwith __LOC__
   | Uniform sz ->
     let gen =
-      match bt with
+      let bt' = match bt with Loc -> Memory.uintptr_bt | _ -> bt in
+      match bt' with
       | Bits (Unsigned, bits) -> "u" ^ string_of_int bits
       | Bits (Signed, bits) -> "i" ^ string_of_int bits
-      | _ -> failwith __LOC__
+      | _ -> failwith (CF.Pp_utils.to_plain_string (GT.pp gt) ^ " @ " ^ __LOC__)
     in
-    let b, s, e = compile_it sigma (IT.num_lit_ (Z.of_int sz) bt loc) in
+    let b, s, e =
+      compile_it
+        sigma
+        (IT.num_lit_ (Z.of_int sz) (BT.Bits (Signed, Sys.int_size + 1)) loc)
+    in
     ( b,
       s,
       A.(
@@ -175,13 +175,24 @@ let rec compile_gt
     in
     let b_perm, s_perm, e_perm = compile_it sigma it in
     let b_body, s_body, e_body = compile_gt sigma name gt' in
+    let e_cast =
+      A.(
+        AilEcall
+          ( mk_expr
+              (AilEident
+                 (Sym.fresh_pretty
+                    ("cast_"
+                     ^ Option.get (Utils.get_typedef_string (bt_to_ctype i_bt))
+                     ^ "_to_cn_integer"))),
+            [ mk_expr (AilEident i_sym) ] ))
+    in
     let s_set =
       A.(
         AilSexpr
           (mk_expr
              (AilEcall
                 ( mk_expr (AilEident (Sym.fresh_pretty "cn_map_set")),
-                  List.map mk_expr [ AilEident sym_map; AilEident i_sym ] @ [ e_body ] ))))
+                  List.map mk_expr [ AilEident sym_map; e_cast ] @ [ e_body ] ))))
     in
     let s_loop =
       A.(
@@ -256,8 +267,6 @@ let compile (sigma : CF.GenTypes.genTypeCategory A.sigma) (ctx : GenDefinitions.
   string "#ifndef CN_GEN_H"
   ^^ hardline
   ^^ string "#define CN_GEN_H"
-  ^^ twice hardline
-  ^^ string "#include <cn-executable/utils.h>"
   ^^ twice hardline
   ^^ string "#include \"cn.h\""
   ^^ twice hardline
