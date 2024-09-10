@@ -39,9 +39,8 @@ let destruct_struct_arbitrary (prog5 : unit Mucore.mu_file) (gt : GT.t) : GT.t =
                  GT.map_
                    ( ( sym,
                        bt,
-                       IT.lt_
-                         (IT.sym_ (sym, bt, loc), IT.num_lit_ (Z.of_int len) bt loc)
-                         loc ),
+                       Some (IT.num_lit_ Z.zero bt loc, IT.num_lit_ (Z.of_int len) bt loc),
+                       IT.bool_ true loc ),
                      GT.arbitrary_ (Memory.bt_of_sct ct') loc )
                    loc
                | Array (_, None) -> failwith __LOC__

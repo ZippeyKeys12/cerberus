@@ -142,7 +142,7 @@ let rec compile_it_lat
         in
         GT.let_ (backtrack_num, (sym_val, GT.arbitrary_ v_bt loc), gt_asgn) loc
       in
-      let gt_map = GT.map_ ((q_sym, k_bt, permission), gt_body) loc in
+      let gt_map = GT.map_ ((q_sym, k_bt, None, permission), gt_body) loc in
       let gt_let = GT.let_ (backtrack_num, (x, gt_map), gt') loc in
       return gt_let
     | Resource
@@ -190,7 +190,7 @@ let rec compile_it_lat
         let gt_call = GT.call_ (fsym, args) bt loc in
         GT.let_ (backtrack_num, (sym_val, gt_call), gt_call) loc
       in
-      let gt_map = GT.map_ ((q_sym, q_bt, permission), gt_body) loc in
+      let gt_map = GT.map_ ((q_sym, q_bt, None, permission), gt_body) loc in
       let gt_let = GT.let_ (backtrack_num, (x, gt_map), gt') loc in
       fun s -> (gt_let, GD.add_context gd s)
     | Constraint (lc, (loc, _), lat') ->
