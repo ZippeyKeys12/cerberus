@@ -6,11 +6,11 @@ int contains(char* var) {
     return 1;
 }
 
-#define CN_GEN_INIT()                                                                \
+#define CN_GEN_INIT()                                                                   \
     if (0) {                                                                            \
     cn_label_bennet_backtrack:                                                          \
         printf("Failed to generate value");                                             \
-        exit(1);                                                                       \
+        exit(1);                                                                        \
     }
 
 #define CN_GEN_UNIFORM(ty, sz) cn_gen_uniform_##ty(sz)

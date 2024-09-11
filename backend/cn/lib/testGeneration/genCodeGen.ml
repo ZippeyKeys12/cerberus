@@ -156,7 +156,13 @@ let rec compile_gt
                            (C.no_qualifiers, C.mk_ctype_pointer C.no_qualifiers C.void, e1));
                       mk_expr (AilEsizeof (C.no_qualifiers, Sctypes.to_ctype ct));
                       mk_expr
-                        (AilEstr (None, [ (Locations.unknown, [ Sym.pp_string name ]) ]))
+                        (AilEcast
+                           ( C.no_qualifiers,
+                             C.pointer_to_char,
+                             mk_expr
+                               (AilEstr
+                                  (None, [ (Locations.unknown, [ Sym.pp_string name ]) ]))
+                           ))
                     ] )))
         ]
     in
