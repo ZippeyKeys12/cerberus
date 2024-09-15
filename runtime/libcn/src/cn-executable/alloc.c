@@ -19,7 +19,7 @@
 
 #define MEM_SIZE (1024 * 1024 * 1024)
 char buf[MEM_SIZE];
-static void *curr = buf;
+static void* curr = buf;
 
 // 268,435,449
 
@@ -39,11 +39,11 @@ static void *curr = buf;
 //     return res;
 // }
 
-void *alloc_(long nbytes, const char *str, int line) {
+void* alloc_(long nbytes, const char* str, int line) {
     static unsigned long count;
-    // printf("Alloc called: %s:%d\n", str, line);
-    void *res = curr;
-    if ((char *) curr + nbytes - buf > MEM_SIZE) {
+    printf("Alloc called: %s:%d\n", str, line);
+    void* res = curr;
+    if ((char*)curr + nbytes - buf > MEM_SIZE) {
         printf("Out of memory! %lu\n", count);
         exit(1);
     }

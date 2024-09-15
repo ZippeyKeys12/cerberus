@@ -5,7 +5,9 @@ module CtA = Cn_internal_to_ail
 module Utils = Executable_spec_utils
 module BT = BaseTypes
 module IT = IndexTerms
+module LC = LogicalConstraints
 module GT = GenTerms
+module SymSet = Set.Make (Sym)
 
 let ocaml_int_bt = BT.Bits (Signed, Sys.int_size + 1)
 
@@ -23,17 +25,23 @@ let get_name (syms : Sym.t list) : Sym.t =
 
 
 let bt_to_ctype ?(pred_sym = None) bt =
-  let ct = CtA.bt_to_ail_ctype ~pred_sym bt in
-  if not (C.ctypeEqual C.void ct) then
-    ct
-  else
+  if BT.equal BT.Unit bt then
     C.Ctype ([], C.Pointer (C.no_qualifiers, C.void))
+  else
+    CtA.bt_to_ail_ctype ~pred_sym bt
 
 
 let name_of_bt (bt : BT.t) : string =
   let ct = bt_to_ctype bt in
-  let default = CF.Pp_utils.to_plain_string (CF.Pp_core_ctype.pp_ctype ct) in
+  let ct' =
+    match bt_to_ctype bt with Ctype (_, Pointer (_, ct')) -> ct' | _ -> failwith ""
+  in
+  let default = CF.Pp_utils.to_plain_string (CF.Pp_core_ctype.pp_ctype ct') in
   Utils.get_typedef_string ct |> Option.value ~default
+
+
+let str_name_of_bt (bt : BT.t) : string =
+  name_of_bt bt |> String.split_on_char ' ' |> String.concat "_"
 
 
 let stmt_of_doc (doc : Pp.document) : CF.GenTypes.genTypeCategory A.statement_ =
@@ -45,8 +53,12 @@ let stmt_of_doc (doc : Pp.document) : CF.GenTypes.genTypeCategory A.statement_ =
                Pp.(plain ~width:90 (string "/*" ^^ space ^^ doc ^^ space ^^ string "*/"))))))
 
 
-let compile_it (sigma : CF.GenTypes.genTypeCategory A.sigma) it =
+let compile_it (sigma : CF.GenTypes.genTypeCategory A.sigma) (it : IT.t) =
   CtA.cn_to_ail_expr_internal sigma.cn_datatypes [] it PassBack
+
+
+let compile_lc (sigma : CF.GenTypes.genTypeCategory A.sigma) (lc : LC.t) =
+  CtA.cn_to_ail_logical_constraint_internal sigma.cn_datatypes [] PassBack lc
 
 
 let rec compile_gt
@@ -108,7 +120,7 @@ let rec compile_gt
       |> List.map snd
       |> List.map (compile_it sigma)
       |> List.fold_left
-           (fun (b2, s2, es) (b1, s1, e) -> (b1 @ b2, s1 @ s2, es @ [ e ]))
+           (fun (b2, s2, es) (b1, s1, e) -> (b1 @ b2, s1 @ s2, e :: es))
            ([], [], [])
     in
     (b, s, mk_expr (AilEcall (mk_expr (AilEident sym), List.rev es)))
@@ -145,7 +157,7 @@ let rec compile_gt
                          ( mk_expr
                              (AilEident
                                 (Sym.fresh_named
-                                   ("convert_from_" ^ name_of_bt (IT.bt it_val)))),
+                                   ("convert_from_" ^ str_name_of_bt (IT.bt it_val)))),
                            [ e2 ] )) )));
           AilSexpr
             (mk_expr
@@ -185,7 +197,7 @@ let rec compile_gt
         [ AilSexpr
             (mk_expr
                (AilEcall
-                  ( mk_expr (AilEident (Sym.fresh_named "CN_GEN_LET_START")),
+                  ( mk_expr (AilEident (Sym.fresh_named "CN_GEN_LET_BEGIN")),
                     List.map
                       mk_expr
                       [ AilEconst
@@ -207,7 +219,7 @@ let rec compile_gt
                       [ AilEconst
                           (ConstantInteger
                              (IConstant (Z.of_int backtracks, Decimal, None)));
-                        AilEident (Sym.fresh_named (name_of_bt (GT.bt gt1) ^ "*"));
+                        AilEident (Sym.fresh_named (name_of_bt (GT.bt gt1)));
                         AilEident x
                       ]
                     @ [ e2; mk_expr (AilEident (Sym.fresh_named "bennet")) ] )))
@@ -216,15 +228,30 @@ let rec compile_gt
     let b4, s4, e4 = compile_gt sigma name gt2 in
     (b2 @ [ Utils.create_binding x (bt_to_ctype (GT.bt gt1)) ] @ b4, s1 @ s2 @ s3 @ s4, e4)
   | Return it ->
-    let s_comment =
-      stmt_of_doc
-        (let open Pp in
-         string "return" ^^ space ^^ IT.pp it)
-    in
+    (* let s_comment =
+       stmt_of_doc
+       (let open Pp in
+       string "return" ^^ space ^^ IT.pp it)
+       in *)
     let b, s, e = compile_it sigma it in
-    (b, [ s_comment ] @ s, e)
-  | Assert (_lc, gt') ->
-    compile_gt sigma name gt'
+    (b, s, e)
+  | Assert (lc, gt') ->
+    let b1, s1, e1 = compile_lc sigma lc in
+    let s_assert =
+      A.
+        [ AilSexpr
+            (mk_expr
+               (AilEcall
+                  ( mk_expr (AilEident (Sym.fresh_named "CN_GEN_ASSERT")),
+                    e1
+                    :: List.map
+                         (fun x -> mk_expr (AilEident x))
+                         (Sym.fresh_named "bennet"
+                          :: List.of_seq (SymSet.to_seq (LC.free_vars lc))) )))
+        ]
+    in
+    let b2, s2, e2 = compile_gt sigma name gt' in
+    (b1 @ b2, s1 @ s_assert @ s2, e2)
     (* ( [],
        [],
        Some
@@ -273,59 +300,51 @@ let rec compile_gt
        in *)
     let sym_map = Sym.fresh () in
     let b_map = Utils.create_binding sym_map (bt_to_ctype bt) in
-    let s_map =
+    let b_i = Utils.create_binding i_sym (bt_to_ctype i_bt) in
+    let b_min, s_min, e_min = compile_it sigma it_min in
+    let b_max, s_max, e_max = compile_it sigma it_max in
+    assert (b_max == []);
+    assert (s_max == []);
+    let e_args =
+      [ mk_expr (AilEident sym_map);
+        mk_expr (AilEident i_sym);
+        mk_expr (AilEident (Sym.fresh_named (name_of_bt i_bt)))
+      ]
+    in
+    let s_begin =
       A.(
-        AilSdeclaration
-          [ ( sym_map,
-              Some
-                (mk_expr
-                   (AilEcall (mk_expr (AilEident (Sym.fresh_named "map_create")), []))) )
+        s_min
+        @ [ AilSexpr
+              (mk_expr
+                 (AilEcall
+                    ( mk_expr (AilEident (Sym.fresh_named "CN_GEN_MAP_BEGIN")),
+                      e_args @ [ e_min; e_max ] )))
           ])
     in
-    let i_it = IT.sym_ (i_sym, i_bt, loc) in
-    let b_start, s_start, e_start = compile_it sigma it_min in
-    let b_i = Utils.create_binding i_sym (bt_to_ctype i_bt) in
-    let s_i = A.AilSdeclaration [ (i_sym, Some e_start) ] in
-    let b_end, s_end, e_end = compile_it sigma (IT.lt_ (i_it, it_max) loc) in
     let b_perm, s_perm, e_perm = compile_it sigma it_perm in
-    let b_body, s_body, e_body = compile_gt sigma name gt' in
-    let e_cast =
-      A.(
-        AilEcall
-          ( mk_expr
-              (AilEident
-                 (Sym.fresh_pretty
-                    ("cast_"
-                     ^ Option.get (Utils.get_typedef_string (bt_to_ctype i_bt))
-                     ^ "_to_cn_integer"))),
-            [ mk_expr (AilEident i_sym) ] ))
-    in
-    let s_set =
-      A.(
-        AilSexpr
-          (mk_expr
-             (AilEcall
-                ( mk_expr (AilEident (Sym.fresh_pretty "cn_map_set")),
-                  List.map mk_expr [ AilEident sym_map; e_cast ] @ [ e_body ] ))))
-    in
-    let s_loop =
-      A.(
-        AilSwhile
-          ( e_end,
-            mk_stmt
-              (AilSif
-                 ( e_perm,
-                   mk_stmt (AilSblock (b_body, List.map mk_stmt (s_body @ [ s_set ]))),
-                   mk_stmt AilSskip )),
-            0 ))
-    in
     let s_body =
       A.(
-        AilSblock
-          ( [ b_i ] @ b_start @ b_end @ b_perm,
-            List.map mk_stmt ([ s_i ] @ s_start @ s_end @ s_perm @ [ s_loop ]) ))
+        s_perm
+        @ [ AilSexpr
+              (mk_expr
+                 (AilEcall
+                    (mk_expr (AilEident (Sym.fresh_named "CN_GEN_MAP_BODY")), [ e_perm ])))
+          ])
     in
-    ([ b_map ], [ s_map; s_body ], mk_expr (AilEident sym_map))
+    let b_val, s_val, e_val = compile_gt sigma name gt' in
+    let s_end =
+      A.(
+        s_val
+        @ [ AilSexpr
+              (mk_expr
+                 (AilEcall
+                    ( mk_expr (AilEident (Sym.fresh_named "CN_GEN_MAP_END")),
+                      e_args @ [ e_max; e_val ] )))
+          ])
+    in
+    ( [ b_map; b_i ] @ b_min @ b_perm @ b_val,
+      s_begin @ s_body @ s_end,
+      mk_expr (AilEident sym_map) )
 
 
 let compile_gen_def
@@ -389,9 +408,7 @@ let compile (sigma : CF.GenTypes.genTypeCategory A.sigma) (ctx : GenDefinitions.
   ^^ hardline
   ^^ string "#define CN_GEN_H"
   ^^ twice hardline
-  ^^ string "#include <cn-testing/dsl.h>"
-  ^^ hardline
-  ^^ string "#include <cn-testing/generators.h>"
+  ^^ string "#include <cn-testing/prelude.h>"
   ^^ twice hardline
   ^^ string "#include \"cn.h\""
   ^^ twice hardline

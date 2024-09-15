@@ -186,9 +186,9 @@ let rec compile_it_lat
       in
       (* Build [GT.t] *)
       let gt_body =
-        let sym_val = Sym.fresh () in
-        let gt_call = GT.call_ (fsym, args) bt loc in
-        GT.let_ (backtrack_num, (sym_val, gt_call), gt_call) loc
+        (* let sym_val = Sym.fresh () in *)
+        GT.call_ (fsym, args) bt loc
+        (* GT.let_ (backtrack_num, (sym_val, gt_call), gt_call) loc *)
       in
       let gt_map = GT.map_ ((q_sym, q_bt, None, permission), gt_body) loc in
       let gt_let = GT.let_ (backtrack_num, (x, gt_map), gt') loc in
