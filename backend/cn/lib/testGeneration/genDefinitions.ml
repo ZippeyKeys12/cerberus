@@ -9,6 +9,10 @@ type t =
   }
 [@@deriving eq, ord]
 
+let mangled_name { name; iargs; oargs = _; body = _ } : Sym.t =
+  GenUtils.get_mangled_name (name :: List.map fst iargs)
+
+
 let pp (gd : t) : Pp.document =
   let open Pp in
   group

@@ -1,1 +1,1 @@
-val compile : unit Mucore.mu_file -> GenDefinitions.context
+val compile : ?ctx:GenDefinitions.context -> unit Mucore.mu_file -> GenDefinitions.context

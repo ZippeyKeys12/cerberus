@@ -1007,10 +1007,15 @@ let rec cn_to_ail_expr_aux_internal
     let res_binding = create_binding res_sym (mk_ctype ctype_) in
     let fn_call =
       A.(
-        AilEcall
-          ( mk_expr (AilEident (Sym.fresh_pretty "alloc")),
-            [ mk_expr (AilEsizeof (empty_qualifiers, mk_ctype C.(Struct cn_struct_tag))) ]
-          ))
+        AilEcast
+          ( C.no_qualifiers,
+            C.(mk_ctype_pointer no_qualifiers (mk_ctype (Struct cn_struct_tag))),
+            mk_expr
+              (AilEcall
+                 ( mk_expr (AilEident (Sym.fresh_pretty "alloc")),
+                   [ mk_expr
+                       (AilEsizeof (empty_qualifiers, mk_ctype C.(Struct cn_struct_tag)))
+                   ] )) ))
     in
     let alloc_stat = A.(AilSdeclaration [ (res_sym, Some (mk_expr fn_call)) ]) in
     let b, s = ([ res_binding ], [ alloc_stat ]) in
@@ -1066,11 +1071,15 @@ let rec cn_to_ail_expr_aux_internal
        in
        let alloc_call =
          A.(
-           AilEcall
-             ( mk_expr (AilEident (Sym.fresh_pretty "alloc")),
-               [ mk_expr
-                   (AilEsizeof (empty_qualifiers, mk_ctype C.(Struct cn_struct_tag)))
-               ] ))
+           AilEcast
+             ( C.no_qualifiers,
+               C.(mk_ctype_pointer no_qualifiers (mk_ctype (Struct cn_struct_tag))),
+               mk_expr
+                 (AilEcall
+                    ( mk_expr (AilEident (Sym.fresh_pretty "alloc")),
+                      [ mk_expr
+                          (AilEsizeof (empty_qualifiers, mk_ctype C.(Struct cn_struct_tag)))
+                      ] )) ))
        in
        let res_decl = A.(AilSdeclaration [ (res_sym, Some (mk_expr alloc_call)) ]) in
        let generate_member_assignment m (member_id, _) =
@@ -1110,9 +1119,14 @@ let rec cn_to_ail_expr_aux_internal
     let res_binding = create_binding res_sym (mk_ctype ctype_) in
     let fn_call =
       A.(
-        AilEcall
-          ( mk_expr (AilEident (Sym.fresh_pretty "alloc")),
-            [ mk_expr (AilEsizeof (empty_qualifiers, mk_ctype C.(Struct sym_name))) ] ))
+        AilEcast
+          ( C.no_qualifiers,
+            C.(mk_ctype_pointer no_qualifiers (mk_ctype (Struct sym_name))),
+            mk_expr
+              (AilEcall
+                 ( mk_expr (AilEident (Sym.fresh_pretty "alloc")),
+                   [ mk_expr (AilEsizeof (empty_qualifiers, mk_ctype C.(Struct sym_name)))
+                   ] )) ))
     in
     let alloc_stat = A.(AilSdeclaration [ (res_sym, Some (mk_expr fn_call)) ]) in
     let b, s = ([ res_binding ], [ alloc_stat ]) in
@@ -1142,11 +1156,16 @@ let rec cn_to_ail_expr_aux_internal
     let alloc_sym = Sym.fresh_pretty "alloc" in
     let fn_call =
       A.(
-        AilEcall
-          ( mk_expr (AilEident alloc_sym),
-            [ mk_expr
-                (AilEsizeof (empty_qualifiers, mk_ctype C.(Struct parent_dt.cn_dt_name)))
-            ] ))
+        AilEcast
+          ( C.no_qualifiers,
+            C.(mk_ctype_pointer no_qualifiers (mk_ctype (Struct parent_dt.cn_dt_name))),
+            mk_expr
+              (AilEcall
+                 ( mk_expr (AilEident alloc_sym),
+                   [ mk_expr
+                       (AilEsizeof
+                          (empty_qualifiers, mk_ctype C.(Struct parent_dt.cn_dt_name)))
+                   ] )) ))
     in
     let ail_decl = A.(AilSdeclaration [ (res_sym, Some (mk_expr fn_call)) ]) in
     let lc_constr_sym = generate_sym_with_suffix ~suffix:"" ~lowercase:true sym in
@@ -1168,10 +1187,15 @@ let rec cn_to_ail_expr_aux_internal
     in
     let constr_alloc_call =
       A.(
-        AilEcall
-          ( mk_expr (AilEident alloc_sym),
-            [ mk_expr (AilEsizeof (empty_qualifiers, mk_ctype C.(Struct lc_constr_sym))) ]
-          ))
+        AilEcast
+          ( C.no_qualifiers,
+            C.(mk_ctype_pointer no_qualifiers (mk_ctype (Struct lc_constr_sym))),
+            mk_expr
+              (AilEcall
+                 ( mk_expr (AilEident alloc_sym),
+                   [ mk_expr
+                       (AilEsizeof (empty_qualifiers, mk_ctype C.(Struct lc_constr_sym)))
+                   ] )) ))
     in
     let constr_allocation_stat =
       if List.is_empty ms then
@@ -1545,12 +1569,13 @@ let cn_to_ail_expr_internal
 let cn_to_ail_expr
   (dts : _ CF.Cn.cn_datatype list)
   (globals : (C.union_tag * C.ctype) list)
+  (pred_sym_opt : Sym.t option)
   (it : IT.t)
   : A.bindings
     * CF.GenTypes.genTypeCategory A.statement_ list
     * CF.GenTypes.genTypeCategory A.expression
   =
-  cn_to_ail_expr_internal dts globals it PassBack
+  cn_to_ail_expr_aux_internal None pred_sym_opt dts globals it PassBack
 
 
 let cn_to_ail_expr_internal_with_pred_name
@@ -1891,9 +1916,13 @@ let generate_datatype_default_function (cn_datatype : cn_datatype) =
   let generate_alloc_assign ctype =
     mk_expr
       A.(
-        AilEcall
-          ( mk_expr (AilEident (Sym.fresh_pretty "alloc")),
-            [ mk_expr (AilEsizeof (empty_qualifiers, ctype)) ] ))
+        AilEcast
+          ( C.no_qualifiers,
+            C.(mk_ctype_pointer no_qualifiers ctype),
+            mk_expr
+              (AilEcall
+                 ( mk_expr (AilEident (Sym.fresh_pretty "alloc")),
+                   [ mk_expr (AilEsizeof (empty_qualifiers, ctype)) ] )) ))
   in
   let alloc_fcall = generate_alloc_assign cn_struct_ctype in
   let res_sym = Sym.fresh_pretty "res" in
@@ -2142,9 +2171,13 @@ let generate_struct_default_function
     let fn_sym = Sym.fresh_pretty fn_str in
     let alloc_fcall =
       A.(
-        AilEcall
-          ( mk_expr (AilEident (Sym.fresh_pretty "alloc")),
-            [ mk_expr (AilEsizeof (empty_qualifiers, cn_struct_ctype)) ] ))
+        AilEcast
+          ( C.no_qualifiers,
+            C.(mk_ctype_pointer no_qualifiers cn_struct_ctype),
+            mk_expr
+              (AilEcall
+                 ( mk_expr (AilEident (Sym.fresh_pretty "alloc")),
+                   [ mk_expr (AilEsizeof (empty_qualifiers, cn_struct_ctype)) ] )) ))
     in
     let ret_sym = Sym.fresh () in
     let ret_binding = create_binding ret_sym cn_struct_ptr_ctype in
@@ -2229,9 +2262,13 @@ let generate_struct_conversion_to_function
     in
     let alloc_fcall =
       A.(
-        AilEcall
-          ( mk_expr (AilEident (Sym.fresh_pretty "alloc")),
-            [ mk_expr (AilEsizeof (empty_qualifiers, cn_struct_ctype)) ] ))
+        AilEcast
+          ( C.no_qualifiers,
+            C.(mk_ctype_pointer no_qualifiers cn_struct_ctype),
+            mk_expr
+              (AilEcall
+                 ( mk_expr (AilEident (Sym.fresh_pretty "alloc")),
+                   [ mk_expr (AilEsizeof (empty_qualifiers, cn_struct_ctype)) ] )) ))
     in
     let res_assign = A.(AilSdeclaration [ (res_sym, Some (mk_expr alloc_fcall)) ]) in
     let generate_member_assignment (id, (_, _, _, ctype)) =
@@ -2461,9 +2498,13 @@ let generate_record_default_function dts (sym, (members : BT.member_types))
   let fn_sym = Sym.fresh_pretty fn_str in
   let alloc_fcall =
     A.(
-      AilEcall
-        ( mk_expr (AilEident (Sym.fresh_pretty "alloc")),
-          [ mk_expr (AilEsizeof (empty_qualifiers, cn_struct_ctype)) ] ))
+      AilEcast
+        ( C.no_qualifiers,
+          C.(mk_ctype_pointer no_qualifiers cn_struct_ctype),
+          mk_expr
+            (AilEcall
+               ( mk_expr (AilEident (Sym.fresh_pretty "alloc")),
+                 [ mk_expr (AilEsizeof (empty_qualifiers, cn_struct_ctype)) ] )) ))
   in
   let ret_sym = Sym.fresh () in
   let ret_binding = create_binding ret_sym cn_struct_ptr_ctype in

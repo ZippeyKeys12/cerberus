@@ -98,6 +98,8 @@ val generate_struct_default_function
   A.sigma_tag_definition ->
   (A.sigma_declaration * CF.GenTypes.genTypeCategory A.sigma_function_definition) list
 
+val generate_record_opt : Sym.t -> BT.t -> A.sigma_tag_definition option
+
 val generate_record_equality_function
   :  'a ->
   Sym.t * BT.member_types ->
@@ -115,6 +117,7 @@ val generate_record_map_get
 val cn_to_ail_expr
   :  A.sigma_cn_datatype list ->
   (C.union_tag * C.ctype) list ->
+  Sym.t option ->
   IndexTerms.t ->
   A.bindings
   * CF.GenTypes.genTypeCategory A.statement_ list

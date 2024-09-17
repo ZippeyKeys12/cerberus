@@ -7,7 +7,7 @@ let generated_size (bt : BT.t) : int = match bt with Datatype _ -> 100 | _ -> -1
 
 let handle_arbitrary (gt : GT.t) : GT.t =
   let aux (gt : GT.t) : GT.t =
-    let (GT (gt_, bt, loc)) = gt in
+    let (GT (gt_, (pred, bt), loc)) = gt in
     let gt_ =
       match gt_ with
       | Arbitrary ->
@@ -17,7 +17,7 @@ let handle_arbitrary (gt : GT.t) : GT.t =
          | _ -> GT.Uniform (generated_size bt))
       | _ -> gt_
     in
-    GT (gt_, bt, loc)
+    GT (gt_, (pred, bt), loc)
   in
   GT.map_gen_pre aux gt
 

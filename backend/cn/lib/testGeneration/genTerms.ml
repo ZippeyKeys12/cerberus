@@ -23,14 +23,20 @@ type t_ =
   | Map of (Sym.t * BT.t * (IT.t * IT.t) * IT.t) * t
 [@@deriving eq, ord]
 
-and t = GT of t_ * BT.t * (Locations.t[@equal fun _ _ -> true] [@compare fun _ _ -> 0])
+and t =
+  | GT of
+      t_
+      * (Sym.t option * BT.t)
+      * (Locations.t[@equal fun _ _ -> true] [@compare fun _ _ -> 0])
 [@@deriving eq, ord]
 
 (* Accessors *)
 
 let term (GT (gt_, _, _)) = gt_
 
-let basetype (GT (_, bt, _)) = bt
+let pred (GT (_, (pred, _), _)) = pred
+
+let basetype (GT (_, (_, bt), _)) = bt
 
 let bt = basetype
 
@@ -38,9 +44,11 @@ let loc (GT (_, _, loc)) = loc
 
 (* Smart constructors *)
 
-let arbitrary_ (bt : BT.t) (loc : Locations.t) : t = GT (Arbitrary, bt, loc)
+let arbitrary_ (bt : BT.t) (loc : Locations.t) : t = GT (Arbitrary, (None, bt), loc)
 
-let uniform_ ((bt, sz) : BT.t * int) (loc : Locations.t) : t = GT (Uniform sz, bt, loc)
+let uniform_ ((bt, sz) : BT.t * int) (loc : Locations.t) : t =
+  GT (Uniform sz, (None, bt), loc)
+
 
 let pick_ (wgts : (int * t) list) (loc : Locations.t) : t =
   match wgts with
@@ -53,32 +61,37 @@ let pick_ (wgts : (int * t) list) (loc : Locations.t) : t =
         (basetype gt)
         wgts'
     in
-    GT (Pick wgts, bt, loc)
+    GT (Pick wgts, (None, bt), loc)
   | [] -> failwith "unreachable"
 
 
-let alloc_ (it : IT.t) loc : t = GT (Alloc it, BT.Loc (), loc)
+let alloc_ (it : IT.t) loc : t = GT (Alloc it, (None, BT.Loc ()), loc)
 
-let call_ (fsym, xits) bt loc : t = GT (Call (fsym, xits), bt, loc)
+let call_ (fsym, xits) (bt : BT.t) loc : t =
+  GT
+    ( Call (fsym, xits),
+      (Some (GenUtils.get_mangled_name (fsym :: List.map fst xits)), bt),
+      loc )
+
 
 let asgn_ ((it_addr, ct), it_val, gt') loc =
-  GT (Asgn ((it_addr, ct), it_val, gt'), basetype gt', loc)
+  GT (Asgn ((it_addr, ct), it_val, gt'), (None, basetype gt'), loc)
 
 
 let let_ ((retries, (x, gt1), gt2) : int * (Sym.t * t) * t) (loc : Locations.t) : t =
-  GT (Let (retries, x, gt1, gt2), basetype gt2, loc)
+  GT (Let (retries, x, gt1, gt2), (None, basetype gt2), loc)
 
 
-let return_ (it : IT.t) (loc : Locations.t) : t = GT (Return it, IT.bt it, loc)
+let return_ (it : IT.t) (loc : Locations.t) : t = GT (Return it, (None, IT.bt it), loc)
 
 let assert_ ((lc, gt') : LC.t * t) (loc : Locations.t) : t =
-  GT (Assert (lc, gt'), basetype gt', loc)
+  GT (Assert (lc, gt'), (None, basetype gt'), loc)
 
 
 let ite_ ((it_if, gt_then, gt_else) : IT.t * t * t) loc : t =
   let bt = basetype gt_then in
   assert (BT.equal bt (basetype gt_else));
-  GT (ITE (it_if, gt_then, gt_else), bt, loc)
+  GT (ITE (it_if, gt_then, gt_else), (None, bt), loc)
 
 
 let map_
@@ -96,7 +109,7 @@ let map_
   in
   GT
     ( Map ((i, i_bt, (it_min, it_max), it_perm), gt_inner),
-      BT.make_map_bt i_bt (basetype gt_inner),
+      (None, BT.make_map_bt i_bt (basetype gt_inner)),
       loc )
 
 
@@ -174,8 +187,10 @@ let is_ite (gt : t) : bool =
 let rec pp (gt : t) : Pp.document =
   let open Pp in
   match gt with
-  | GT (Arbitrary, bt, _here) -> string "arbitrary" ^^ angles (BT.pp bt) ^^ parens empty
-  | GT (Uniform sz, bt, _here) -> string "uniform" ^^ angles (BT.pp bt) ^^ parens (int sz)
+  | GT (Arbitrary, (_, bt), _here) ->
+    string "arbitrary" ^^ angles (BT.pp bt) ^^ parens empty
+  | GT (Uniform sz, (_, bt), _here) ->
+    string "uniform" ^^ angles (BT.pp bt) ^^ parens (int sz)
   | GT (Pick wgts, _bt, _here) ->
     string "pick"
     ^^ parens
@@ -212,6 +227,10 @@ let rec pp (gt : t) : Pp.document =
     ^^ (if is_return gt1 then empty else star)
     ^^ space
     ^^ Sym.pp x
+    ^^ space
+    ^^ colon
+    ^^ space
+    ^^ BT.pp (basetype gt1)
     ^^ space
     ^^ equals
     ^^ nest 2 (break 1 ^^ pp gt1)

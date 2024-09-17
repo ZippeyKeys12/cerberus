@@ -15,17 +15,16 @@
 
 #define CN_GEN_UNIFORM(ty, sz) cn_gen_uniform_##ty(sz)
 
+#define CN_GEN_CALL(...) todo()
+
 #define CN_GEN_ASSIGN(p, offset, addr_ty, value, gen_name, last_var)                    \
     if (!convert_from_cn_bool(cn_bits_u64_lt(offset, cn_gen_alloc_size(p)))) {          \
         cn_gen_backtrack_alloc_set((size_t)offset->val + 1);                            \
         goto cn_label_##last_var##_backtrack;                                           \
     }                                                                                   \
-    *(addr_ty*)cn_pointer_add_cn_bits_u64(dst, offset)->ptr = value;                    \
-    cn_assume_ownership(                                                                \
-        (void*)cn_pointer_add_cn_bits_u64(dst, offset),                                 \
-        sizeof(addr_ty), (char*)gen_name);
-
-#define CN_GEN_CALL(...) todo()
+    void *tmp = convert_from_cn_pointer(cn_pointer_add_cn_bits_u64(dst, offset));       \
+    *(addr_ty*)tmp = value;                                                             \
+    cn_assume_ownership((void*)tmp, sizeof(addr_ty), (char*)gen_name);
 
 #define CN_GEN_LET_BEGIN(backtracks, var)                                               \
     int var##_backtracks = backtracks;                                                  \

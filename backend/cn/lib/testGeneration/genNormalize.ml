@@ -9,7 +9,7 @@ let backtracks = 10
 let destruct_struct_arbitrary (prog5 : unit Mucore.mu_file) (gt : GT.t) : GT.t =
   let aux (gt : GT.t) : GT.t =
     match gt with
-    | GT (Arbitrary, Struct tag, loc) ->
+    | GT (Arbitrary, (_, Struct tag), loc) ->
       (match Pmap.find tag prog5.mu_tagDefs with
        | M_StructDef pieces ->
          let members =

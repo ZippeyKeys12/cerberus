@@ -60,7 +60,7 @@ type context = t SymMap.t [@@deriving eq, ord]
     in
     Some { iargs; oargs }) *)
 
-module ModeInference = struct
+(* module ModeInference = struct
   let ( let@ ) g f = List.flatten (List.map f g)
 
   let return x = [ x ]
@@ -305,4 +305,4 @@ module ModeInference = struct
       (infer_specs prog5)
 end
 
-let infer = ModeInference.infer
+let infer = ModeInference.infer *)
