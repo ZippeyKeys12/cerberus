@@ -11,7 +11,7 @@ void cn_gen_alloc_reset(void) {
 }
 
 cn_pointer* cn_gen_alloc(cn_bits_u64* sz) {
-    void* p = alloc(*sz->val);
+    void* p = alloc(sz->val);
     ht_set(pointer_size_map, p, (void*)sz);
     return convert_to_cn_pointer(p);
 }

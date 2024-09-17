@@ -57,7 +57,7 @@ let pick_ (wgts : (int * t) list) (loc : Locations.t) : t =
   | [] -> failwith "unreachable"
 
 
-let alloc_ (it : IT.t) loc : t = GT (Alloc it, BT.Loc, loc)
+let alloc_ (it : IT.t) loc : t = GT (Alloc it, BT.Loc (), loc)
 
 let call_ (fsym, xits) bt loc : t = GT (Call (fsym, xits), bt, loc)
 
@@ -246,7 +246,7 @@ let rec pp (gt : t) : Pp.document =
     ^^ braces (nest 2 (break 1 ^^ pp gt') ^^ break 1)
 
 
-let rec subst_ (su : [ `Term of IT.typed | `Rename of Sym.t ] Subst.t) (gt_ : t_) : t_ =
+let rec subst_ (su : [ `Term of IT.t | `Rename of Sym.t ] Subst.t) (gt_ : t_) : t_ =
   match gt_ with
   | Arbitrary -> Arbitrary
   | Uniform sz -> Uniform sz
@@ -269,7 +269,7 @@ let rec subst_ (su : [ `Term of IT.typed | `Rename of Sym.t ] Subst.t) (gt_ : t_
         subst su gt' )
 
 
-and subst (su : [ `Term of IT.typed | `Rename of Sym.t ] Subst.t) (gt : t) : t =
+and subst (su : [ `Term of IT.t | `Rename of Sym.t ] Subst.t) (gt : t) : t =
   let (GT (gt_, bt, here)) = gt in
   GT (subst_ su gt_, bt, here)
 

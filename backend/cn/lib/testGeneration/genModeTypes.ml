@@ -268,7 +268,7 @@ module ModeInference = struct
     (* Start out with all arguments possible as inputs *)
     let ctx =
       build_context (fun _fsym pd ->
-        let args = (pd.pointer, BT.Loc) :: pd.iargs in
+        let args = (pd.pointer, BT.Loc ()) :: pd.iargs in
         ModeSet.singleton { iargs = List.map_snd GBT.of_bt args; oargs = [] })
     in
     (* Run *)

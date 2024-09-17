@@ -54,11 +54,11 @@ let stmt_of_doc (doc : Pp.document) : CF.GenTypes.genTypeCategory A.statement_ =
 
 
 let compile_it (sigma : CF.GenTypes.genTypeCategory A.sigma) (it : IT.t) =
-  CtA.cn_to_ail_expr_internal sigma.cn_datatypes [] it PassBack
+  CtA.cn_to_ail_expr sigma.cn_datatypes [] it
 
 
 let compile_lc (sigma : CF.GenTypes.genTypeCategory A.sigma) (lc : LC.t) =
-  CtA.cn_to_ail_logical_constraint_internal sigma.cn_datatypes [] PassBack lc
+  CtA.cn_to_ail_logical_constraint sigma.cn_datatypes [] lc
 
 
 let rec compile_gt

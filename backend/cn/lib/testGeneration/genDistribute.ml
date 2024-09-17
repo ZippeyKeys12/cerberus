@@ -13,7 +13,7 @@ let handle_arbitrary (gt : GT.t) : GT.t =
       | Arbitrary ->
         (match bt with
          | Map (_k_bt, _v_bt) -> failwith __LOC__
-         | Loc -> GT.Alloc (IT.num_lit_ Z.zero Memory.size_bt loc)
+         | Loc () -> GT.Alloc (IT.num_lit_ Z.zero Memory.size_bt loc)
          | _ -> GT.Uniform (generated_size bt))
       | _ -> gt_
     in

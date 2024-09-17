@@ -304,23 +304,6 @@ let empty_sigma : sigma 'a = <|
   cn_idents = Map.empty;
 |>
 
-let empty_sigma : sigma 'a = <|
-  declarations = [];
-  object_definitions = [];
-  function_definitions = [];
-  static_assertions = [];
-  tag_definitions = [];
-  extern_idmap = Map.empty;
-  typedef_attributes = Map.empty;
-  loop_attributes = Map.empty;
-  cn_functions = [];
-  cn_lemmata = [];
-  cn_predicates = [];
-  cn_datatypes = [];
-  cn_fun_specs = [];
-  cn_idents = Map.empty;
-|>
-
 type gamma = list (ail_identifier * ((Loc.t * storageDuration * bool) * maybe alignment * qualifiers * ctype))
 
 type ail_program 'a = maybe ail_identifier * sigma 'a

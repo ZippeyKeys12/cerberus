@@ -98,7 +98,7 @@ let rec compile_it_lat
       let gd : GD.t =
         { name = fsym;
           iargs =
-            (pred.pointer, BT.Loc) :: pred.iargs
+            (pred.pointer, BT.Loc ()) :: pred.iargs
             |> List.filter (fun (x, _) -> List.mem Sym.equal x desired_iargs)
             |> List.map (fun (x, bt) -> (x, GBT.of_bt bt));
           oargs =
@@ -173,7 +173,7 @@ let rec compile_it_lat
       let gd : GD.t =
         { name = fsym;
           iargs =
-            (pred.pointer, BT.Loc) :: pred.iargs
+            (pred.pointer, BT.Loc ()) :: pred.iargs
             |> List.filter (fun (x, _) -> List.mem Sym.equal x desired_iargs)
             |> List.map (fun (x, bt) -> (x, GBT.of_bt bt));
           oargs =
