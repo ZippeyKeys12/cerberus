@@ -6,43 +6,44 @@
 #include "backtrack.h"
 
 
-#define CN_GEN_INIT()                                                                   \
-    cn_gen_alloc_reset();                                                               \
+#define CN_GEN_INIT(curr)                                                                   \
     if (0) {                                                                            \
-    cn_label_bennet_backtrack:                                                          \
+    cn_label_##curr##_bennet_backtrack:                                                          \
         return NULL;                                                                    \
     }
 
 #define CN_GEN_UNIFORM(ty, sz) cn_gen_uniform_##ty(sz)
 
-#define CN_GEN_CALL(...) todo()
-
-#define CN_GEN_ASSIGN(p, offset, addr_ty, value, gen_name, last_var)                    \
+#define CN_GEN_ASSIGN(curr, p, offset, addr_ty, value, tmp, gen_name, last_var)                    \
     if (!convert_from_cn_bool(cn_bits_u64_lt(offset, cn_gen_alloc_size(p)))) {          \
+        cn_gen_backtrack_relevant_add((char*)#p);                                       \
         cn_gen_backtrack_alloc_set((size_t)convert_from_cn_bits_u64(offset) + 1);       \
-        goto cn_label_##last_var##_backtrack;                                           \
+        goto cn_label_##curr##_##last_var##_backtrack;                                           \
     }                                                                                   \
     void *tmp = convert_from_cn_pointer(cn_pointer_add_cn_bits_u64(p, offset));         \
     *(addr_ty*)tmp = value;                                                             \
-    cn_assume_ownership(tmp, sizeof(addr_ty), gen_name);
+    cn_assume_ownership(tmp, sizeof(addr_ty), (char*)gen_name);
 
-#define CN_GEN_LET_BEGIN(backtracks, var)                                               \
+#define CN_GEN_LET_BEGIN(curr, backtracks, var)                                         \
     int var##_backtracks = backtracks;                                                  \
-    cn_label_##var##_gen:                                                               \
+    cn_label_##curr##_##var##_gen:                                                               \
         ;
 
-#define CN_GEN_LET_END(backtracks, ty, var, gen, last_var)                              \
+#define CN_GEN_LET_END(curr, backtracks, ty, var, gen, last_var)                              \
         ty* var = gen;                                                                  \
-        if (0) {                                                                        \
-        cn_label_##var##_backtrack:                                                     \
+                                                                                        \
+        if (cn_gen_backtrack_type() != CN_GEN_BACKTRACK_NONE) {                         \
+        cn_label_##curr##_##var##_backtrack:                                                     \
             if (var##_backtracks > 0                                                    \
-                    && cn_gen_backtrack_assert_contains((char*)#var)) {                 \
+                    && cn_gen_backtrack_relevant_contains((char*)#var)) {               \
                 var##_backtracks--;                                                     \
-                cn_gen_backtrack_alloc_reset();                                         \
-                goto cn_label_##var##_gen;                                              \
+                if (cn_gen_backtrack_type() == CN_GEN_BACKTRACK_ASSERT) {               \
+                    cn_gen_backtrack_reset();                                           \
+                }                                                                       \
+                goto cn_label_##curr##_##var##_gen;                                              \
             } else {                                                                    \
-                goto cn_label_##last_var##_backtrack;                                   \
-            }\
+                goto cn_label_##curr##_##last_var##_backtrack;                                   \
+            }                                                                           \
         }
 
 // #define CN_GEN_RETURN(val) val
@@ -97,22 +98,22 @@
 
 #define CN_GEN_ASSERT_START(cond)                                                       \
     if (!(cond)) {                                                                      \
-        cn_gen_backtrack_reset();
+        cn_gen_backtrack_assert_failure();                                              \
 
-#define _CN_GEN_ASSERT_REC(varname)                                                 \
-    cn_gen_backtrack_assert_add((char*)#varname);
+#define _CN_GEN_ASSERT_REC(varname)                                                     \
+        cn_gen_backtrack_relevant_add((char*)#varname);
 
 #define CN_GEN_ASSERT_REC(varname, ...)                                                 \
-    EVAL16(MAP(_CN_GEN_ASSERT_REC, varname, __VA_ARGS__))
+        EVAL16(MAP(_CN_GEN_ASSERT_REC, varname, __VA_ARGS__))
 
-#define CN_GEN_ASSERT_END(last_var)                                                     \
-       goto cn_label_##last_var##_backtrack;                                            \
+#define CN_GEN_ASSERT_END(curr, last_var)                                                     \
+        goto cn_label_##curr##_##last_var##_backtrack;                                            \
     }
 
-#define CN_GEN_ASSERT(cond, last_var, ...) \
+#define CN_GEN_ASSERT(curr, cond, last_var, ...) \
     CN_GEN_ASSERT_START(cond) \
     CN_GEN_ASSERT_REC(__VA_ARGS__) \
-    CN_GEN_ASSERT_END(last_var)
+    CN_GEN_ASSERT_END(curr, last_var)
 
 #define CN_GEN_MAP_BEGIN(map, i, i_ty, min, max)                                        \
     cn_map* map = map_create();                                                         \

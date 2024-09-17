@@ -13,7 +13,7 @@ module SymSet = Set.Make (Sym)
 let bt_to_ctype (pred_sym : Sym.t) (bt : BT.t) : C.ctype =
   let pred_sym = Some pred_sym in
   if BT.equal BT.Unit bt then
-    C.Ctype ([], C.Pointer (C.no_qualifiers, C.void))
+    C.(mk_ctype_pointer no_qualifiers void)
   else
     CtA.bt_to_ail_ctype ~pred_sym bt
 
@@ -25,7 +25,10 @@ let name_of_bt (pred_sym : Sym.t) (bt : BT.t) : string =
     | Ctype (_, Pointer (_, ct')) -> ct'
     | _ -> failwith ""
   in
-  let default = CF.Pp_utils.to_plain_string (CF.Pp_core_ctype.pp_ctype ct') in
+  let default =
+    CF.Pp_utils.to_plain_string
+      (CF.Pp_ail.pp_ctype ~executable_spec:true C.no_qualifiers ct')
+  in
   Utils.get_typedef_string ct |> Option.value ~default
 
 
@@ -44,6 +47,7 @@ let compile_lc (sigma : CF.GenTypes.genTypeCategory A.sigma) (lc : LC.t) =
 let rec compile_gt
   (sigma : CF.GenTypes.genTypeCategory A.sigma)
   (name : Sym.t)
+  (last_var : Sym.t)
   (gt : GT.t)
   : A.bindings
     * CF.GenTypes.genTypeCategory A.statement_ list
@@ -89,7 +93,7 @@ let rec compile_gt
     let p_sym, it_offset =
       match IT.term it_addr with
       | ArrayShift { base = IT (Sym p_sym, _, _); ct; index = it_offset } ->
-        (p_sym, IT.mul_ (IT.sizeOf_ ct here, it_offset) here)
+        (p_sym, IT.mul_ (IT.sizeOf_ ct here, IT.cast_ Memory.size_bt it_offset here) here)
       | Binop (Add, IT (Sym p_sym, _, _), it_offset) -> (p_sym, it_offset)
       | Sym p_sym -> (p_sym, IT.num_lit_ Z.zero Memory.size_bt here)
       | _ -> failwith "unsupported format for address"
@@ -104,14 +108,19 @@ let rec compile_gt
             (mk_expr
                (AilEcall
                   ( mk_expr (AilEident (Sym.fresh_named "CN_GEN_ASSIGN")),
-                    [ mk_expr (AilEident p_sym);
+                    [ mk_expr (AilEident name);
+                      mk_expr (AilEident p_sym);
                       e1;
                       mk_expr
                         (AilEident
                            (Sym.fresh_named
                               (CF.Pp_utils.to_plain_string
-                                 (CF.Pp_core_ctype.pp_ctype (Sctypes.to_ctype ct)))));
+                                 (CF.Pp_ail.pp_ctype
+                                    ~executable_spec:true
+                                    C.no_qualifiers
+                                    (Sctypes.to_ctype ct)))));
                       mk_expr (CtA.wrap_with_convert_from e2_ (IT.bt it_val));
+                      mk_expr (AilEident (Sym.fresh ()));
                       mk_expr
                         (AilEcast
                            ( C.no_qualifiers,
@@ -120,11 +129,11 @@ let rec compile_gt
                                (AilEstr
                                   (None, [ (Locations.unknown, [ Sym.pp_string name ]) ]))
                            ));
-                      mk_expr (AilEident (Sym.fresh_named "bennet"))
+                      mk_expr (AilEident last_var)
                     ] )))
         ]
     in
-    let b4, s4, e4 = compile_gt sigma name gt' in
+    let b4, s4, e4 = compile_gt sigma name last_var gt' in
     (b1 @ b2 @ b3 @ b4, s1 @ s2 @ s3 @ s4, e4)
   | Let (backtracks, x, gt1, gt2) ->
     let s1 =
@@ -135,14 +144,15 @@ let rec compile_gt
                   ( mk_expr (AilEident (Sym.fresh_named "CN_GEN_LET_BEGIN")),
                     List.map
                       mk_expr
-                      [ AilEconst
+                      [ AilEident name;
+                        AilEconst
                           (ConstantInteger
                              (IConstant (Z.of_int backtracks, Decimal, None)));
                         AilEident x
                       ] )))
         ]
     in
-    let b2, s2, e2 = compile_gt sigma name gt1 in
+    let b2, s2, e2 = compile_gt sigma name last_var gt1 in
     let s3 =
       A.
         [ AilSexpr
@@ -151,7 +161,8 @@ let rec compile_gt
                   ( mk_expr (AilEident (Sym.fresh_named "CN_GEN_LET_END")),
                     List.map
                       mk_expr
-                      [ AilEconst
+                      [ AilEident name;
+                        AilEconst
                           (ConstantInteger
                              (IConstant (Z.of_int backtracks, Decimal, None)));
                         AilEident
@@ -161,10 +172,10 @@ let rec compile_gt
                                 (GT.bt gt1)));
                         AilEident x
                       ]
-                    @ [ e2; mk_expr (AilEident (Sym.fresh_named "bennet")) ] )))
+                    @ [ e2; mk_expr (AilEident last_var) ] )))
         ]
     in
-    let b4, s4, e4 = compile_gt sigma name gt2 in
+    let b4, s4, e4 = compile_gt sigma name x gt2 in
     ( b2 @ [ Utils.create_binding x (bt_to_ctype name (GT.bt gt1)) ] @ b4,
       s1 @ s2 @ s3 @ s4,
       e4 )
@@ -179,14 +190,14 @@ let rec compile_gt
             (mk_expr
                (AilEcall
                   ( mk_expr (AilEident (Sym.fresh_named "CN_GEN_ASSERT")),
-                    e1
+                    mk_expr (AilEident name)
+                    :: e1
                     :: List.map
                          (fun x -> mk_expr (AilEident x))
-                         (Sym.fresh_named "bennet"
-                          :: List.of_seq (SymSet.to_seq (LC.free_vars lc))) )))
+                         (last_var :: List.of_seq (SymSet.to_seq (LC.free_vars lc))) )))
         ]
     in
-    let b2, s2, e2 = compile_gt sigma name gt' in
+    let b2, s2, e2 = compile_gt sigma name last_var gt' in
     (b1 @ b2, s1 @ s_assert @ s2, e2)
     (* ( [],
        [],
@@ -195,8 +206,8 @@ let rec compile_gt
        (AilEcall (mk_expr (AilEident (Sym.fresh_named "assert_placeholder")), []))) ) *)
   | ITE (it_if, gt_then, gt_else) ->
     let b_if, s_if, e_if = compile_it sigma name it_if in
-    let b_then, s_then, e_then = compile_gt sigma name gt_then in
-    let b_else, s_else, e_else = compile_gt sigma name gt_else in
+    let b_then, s_then, e_then = compile_gt sigma name last_var gt_then in
+    let b_else, s_else, e_else = compile_gt sigma name last_var gt_else in
     let res_sym = Sym.fresh () in
     let res_expr = mk_expr (AilEident res_sym) in
     let res_binding = Utils.create_binding res_sym (bt_to_ctype name bt) in
@@ -248,7 +259,7 @@ let rec compile_gt
                     (mk_expr (AilEident (Sym.fresh_named "CN_GEN_MAP_BODY")), [ e_perm ])))
           ])
     in
-    let b_val, s_val, e_val = compile_gt sigma name gt' in
+    let b_val, s_val, e_val = compile_gt sigma name last_var gt' in
     let s_end =
       A.(
         s_val
@@ -292,9 +303,13 @@ let compile_gen_def
     A.(
       AilSexpr
         (Utils.mk_expr
-           (AilEcall (Utils.mk_expr (AilEident (Sym.fresh_named "CN_GEN_INIT")), []))))
+           (AilEcall
+              ( Utils.mk_expr (AilEident (Sym.fresh_named "CN_GEN_INIT")),
+                [ Utils.mk_expr (AilEident name) ] ))))
   in
-  let b2, s2, e2 = compile_gt sigma name (Option.get gd.body) in
+  let b2, s2, e2 =
+    compile_gt sigma name (Sym.fresh_named "bennet") (Option.get gd.body)
+  in
   let sigma_def : CF.GenTypes.genTypeCategory A.sigma_function_definition =
     ( name,
       ( Locations.unknown,
