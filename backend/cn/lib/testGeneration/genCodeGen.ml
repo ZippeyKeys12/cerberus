@@ -29,7 +29,7 @@ let name_of_bt (pred_sym : Sym.t) (bt : BT.t) : string =
   Utils.get_typedef_string ct |> Option.value ~default
 
 
-let str_name_of_bt (pred_sym : Sym.t) (bt : BT.t) : string =
+let _str_name_of_bt (pred_sym : Sym.t) (bt : BT.t) : string =
   name_of_bt pred_sym bt |> String.split_on_char ' ' |> String.concat "_"
 
 
@@ -85,45 +85,33 @@ let rec compile_gt
     in
     (b, s, mk_expr (AilEcall (mk_expr (AilEident sym), List.rev es)))
   | Asgn ((it_addr, ct), it_val, gt') ->
-    let p_sym = Sym.fresh () in
-    let b1, s1, e1 =
-      let b1', s1', AnnotatedExpression (_, _, _, e1') = compile_it sigma name it_addr in
-      ( b1' @ [ Utils.create_binding p_sym C.(mk_ctype_pointer no_qualifiers void) ],
-        (s1'
-         @ A.
-             [ AilSdeclaration
-                 [ (p_sym, Some (mk_expr (CtA.wrap_with_convert_from e1' (BT.Loc ())))) ]
-             ]),
-        mk_expr (A.AilEident p_sym) )
+    let here = Locations.other __LOC__ in
+    let p_sym, it_offset =
+      match IT.term it_addr with
+      | ArrayShift { base = IT (Sym p_sym, _, _); ct; index = it_offset } ->
+        (p_sym, IT.mul_ (IT.sizeOf_ ct here, it_offset) here)
+      | Binop (Add, IT (Sym p_sym, _, _), it_offset) -> (p_sym, it_offset)
+      | Sym p_sym -> (p_sym, IT.num_lit_ Z.zero Memory.size_bt here)
+      | _ -> failwith "unsupported format for address"
     in
-    let b2, s2, e2 = compile_it sigma name it_val in
-    let ownership_sym = Sym.fresh_named "cn_assume_ownership" in
+    let tmp_sym = Sym.fresh () in
+    let b1, s1, e1 = compile_it sigma name it_offset in
+    let b2, s2, AnnotatedExpression (_, _, _, e2_) = compile_it sigma name it_val in
+    let b3 = [ Utils.create_binding tmp_sym C.(mk_ctype_pointer no_qualifiers void) ] in
     let s3 =
       A.
         [ AilSexpr
             (mk_expr
-               (AilEassign
-                  ( mk_expr
-                      (AilEunary
-                         ( Indirection,
-                           mk_expr
-                             (AilEcast
-                                ( C.no_qualifiers,
-                                  C.mk_ctype_pointer C.no_qualifiers (Sctypes.to_ctype ct),
-                                  e1 )) )),
-                    mk_expr
-                      (AilEcall
-                         ( mk_expr
-                             (AilEident
-                                (Sym.fresh_named
-                                   ("convert_from_" ^ str_name_of_bt name (IT.bt it_val)))),
-                           [ e2 ] )) )));
-          AilSexpr
-            (mk_expr
                (AilEcall
-                  ( mk_expr (AilEident ownership_sym),
-                    [ e1;
-                      mk_expr (AilEsizeof (C.no_qualifiers, Sctypes.to_ctype ct));
+                  ( mk_expr (AilEident (Sym.fresh_named "CN_GEN_ASSIGN")),
+                    [ mk_expr (AilEident p_sym);
+                      e1;
+                      mk_expr
+                        (AilEident
+                           (Sym.fresh_named
+                              (CF.Pp_utils.to_plain_string
+                                 (CF.Pp_core_ctype.pp_ctype (Sctypes.to_ctype ct)))));
+                      mk_expr (CtA.wrap_with_convert_from e2_ (IT.bt it_val));
                       mk_expr
                         (AilEcast
                            ( C.no_qualifiers,
@@ -131,12 +119,13 @@ let rec compile_gt
                              mk_expr
                                (AilEstr
                                   (None, [ (Locations.unknown, [ Sym.pp_string name ]) ]))
-                           ))
+                           ));
+                      mk_expr (AilEident (Sym.fresh_named "bennet"))
                     ] )))
         ]
     in
-    let b4, s4, oe4 = compile_gt sigma name gt' in
-    (b1 @ b2 @ b4, s1 @ s2 @ s3 @ s4, oe4)
+    let b4, s4, e4 = compile_gt sigma name gt' in
+    (b1 @ b2 @ b3 @ b4, s1 @ s2 @ s3 @ s4, e4)
   | Let (backtracks, x, gt1, gt2) ->
     let s1 =
       A.

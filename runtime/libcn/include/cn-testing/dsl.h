@@ -19,12 +19,12 @@
 
 #define CN_GEN_ASSIGN(p, offset, addr_ty, value, gen_name, last_var)                    \
     if (!convert_from_cn_bool(cn_bits_u64_lt(offset, cn_gen_alloc_size(p)))) {          \
-        cn_gen_backtrack_alloc_set((size_t)offset->val + 1);                            \
+        cn_gen_backtrack_alloc_set((size_t)convert_from_cn_bits_u64(offset) + 1);       \
         goto cn_label_##last_var##_backtrack;                                           \
     }                                                                                   \
-    void *tmp = convert_from_cn_pointer(cn_pointer_add_cn_bits_u64(dst, offset));       \
+    void *tmp = convert_from_cn_pointer(cn_pointer_add_cn_bits_u64(p, offset));         \
     *(addr_ty*)tmp = value;                                                             \
-    cn_assume_ownership((void*)tmp, sizeof(addr_ty), (char*)gen_name);
+    cn_assume_ownership(tmp, sizeof(addr_ty), gen_name);
 
 #define CN_GEN_LET_BEGIN(backtracks, var)                                               \
     int var##_backtracks = backtracks;                                                  \
