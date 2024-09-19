@@ -20,23 +20,17 @@ type t_ =
   | Return of IT.t (** Monadic return *)
   | Assert of LC.t * t (** Assert some [LC.t] are true, backtracking otherwise *)
   | ITE of IT.t * t * t (** If-then-else *)
-  | Map of (Sym.t * BT.t * (IT.t * IT.t) * IT.t) * t
+  | Map of (Sym.t * BT.t * IT.t) * t
 [@@deriving eq, ord]
 
-and t =
-  | GT of
-      t_
-      * (Sym.t option * BT.t)
-      * (Locations.t[@equal fun _ _ -> true] [@compare fun _ _ -> 0])
+and t = GT of t_ * BT.t * (Locations.t[@equal fun _ _ -> true] [@compare fun _ _ -> 0])
 [@@deriving eq, ord]
 
 (* Accessors *)
 
 let term (GT (gt_, _, _)) = gt_
 
-let pred (GT (_, (pred, _), _)) = pred
-
-let basetype (GT (_, (_, bt), _)) = bt
+let basetype (GT (_, bt, _)) = bt
 
 let bt = basetype
 
@@ -44,11 +38,9 @@ let loc (GT (_, _, loc)) = loc
 
 (* Smart constructors *)
 
-let arbitrary_ (bt : BT.t) (loc : Locations.t) : t = GT (Arbitrary, (None, bt), loc)
+let arbitrary_ (bt : BT.t) (loc : Locations.t) : t = GT (Arbitrary, bt, loc)
 
-let uniform_ ((bt, sz) : BT.t * int) (loc : Locations.t) : t =
-  GT (Uniform sz, (None, bt), loc)
-
+let uniform_ ((bt, sz) : BT.t * int) (loc : Locations.t) : t = GT (Uniform sz, bt, loc)
 
 let pick_ (wgts : (int * t) list) (loc : Locations.t) : t =
   match wgts with
@@ -61,56 +53,36 @@ let pick_ (wgts : (int * t) list) (loc : Locations.t) : t =
         (basetype gt)
         wgts'
     in
-    GT (Pick wgts, (None, bt), loc)
+    GT (Pick wgts, bt, loc)
   | [] -> failwith "unreachable"
 
 
-let alloc_ (it : IT.t) loc : t = GT (Alloc it, (None, BT.Loc ()), loc)
+let alloc_ (it : IT.t) loc : t = GT (Alloc it, BT.Loc (), loc)
 
-let call_ (fsym, xits) (bt : BT.t) loc : t =
-  GT
-    ( Call (fsym, xits),
-      (Some (GenUtils.get_mangled_name (fsym :: List.map fst xits)), bt),
-      loc )
-
+let call_ (fsym, xits) (bt : BT.t) loc : t = GT (Call (fsym, xits), bt, loc)
 
 let asgn_ ((it_addr, ct), it_val, gt') loc =
-  GT (Asgn ((it_addr, ct), it_val, gt'), (None, basetype gt'), loc)
+  GT (Asgn ((it_addr, ct), it_val, gt'), basetype gt', loc)
 
 
 let let_ ((retries, (x, gt1), gt2) : int * (Sym.t * t) * t) (loc : Locations.t) : t =
-  GT (Let (retries, x, gt1, gt2), (None, basetype gt2), loc)
+  GT (Let (retries, x, gt1, gt2), basetype gt2, loc)
 
 
-let return_ (it : IT.t) (loc : Locations.t) : t = GT (Return it, (None, IT.bt it), loc)
+let return_ (it : IT.t) (loc : Locations.t) : t = GT (Return it, IT.bt it, loc)
 
 let assert_ ((lc, gt') : LC.t * t) (loc : Locations.t) : t =
-  GT (Assert (lc, gt'), (None, basetype gt'), loc)
+  GT (Assert (lc, gt'), basetype gt', loc)
 
 
 let ite_ ((it_if, gt_then, gt_else) : IT.t * t * t) loc : t =
   let bt = basetype gt_then in
   assert (BT.equal bt (basetype gt_else));
-  GT (ITE (it_if, gt_then, gt_else), (None, bt), loc)
+  GT (ITE (it_if, gt_then, gt_else), bt, loc)
 
 
-let map_
-  (((i, i_bt, its_range, it_perm), gt_inner) :
-    (Sym.t * BT.t * (IT.t * IT.t) option * IT.t) * t)
-  loc
-  : t
-  =
-  let it_min, it_max =
-    match its_range with
-    | Some (it_min, it_max) -> (it_min, it_max)
-    | None ->
-      let min, max = BT.is_bits_bt i_bt |> Option.get |> BT.bits_range in
-      (IT.num_lit_ min i_bt loc, IT.num_lit_ max i_bt loc)
-  in
-  GT
-    ( Map ((i, i_bt, (it_min, it_max), it_perm), gt_inner),
-      (None, BT.make_map_bt i_bt (basetype gt_inner)),
-      loc )
+let map_ (((i, i_bt, it_perm), gt_inner) : (Sym.t * BT.t * IT.t) * t) loc : t =
+  GT (Map ((i, i_bt, it_perm), gt_inner), BT.make_map_bt i_bt (basetype gt_inner), loc)
 
 
 (* Constructor-checking functions *)
@@ -187,10 +159,8 @@ let is_ite (gt : t) : bool =
 let rec pp (gt : t) : Pp.document =
   let open Pp in
   match gt with
-  | GT (Arbitrary, (_, bt), _here) ->
-    string "arbitrary" ^^ angles (BT.pp bt) ^^ parens empty
-  | GT (Uniform sz, (_, bt), _here) ->
-    string "uniform" ^^ angles (BT.pp bt) ^^ parens (int sz)
+  | GT (Arbitrary, bt, _here) -> string "arbitrary" ^^ angles (BT.pp bt) ^^ parens empty
+  | GT (Uniform sz, bt, _here) -> string "uniform" ^^ angles (BT.pp bt) ^^ parens (int sz)
   | GT (Pick wgts, _bt, _here) ->
     string "pick"
     ^^ parens
@@ -254,14 +224,10 @@ let rec pp (gt : t) : Pp.document =
     ^^ string "else"
     ^^ space
     ^^ braces (nest 2 (break 1 ^^ pp gt_else) ^^ break 1)
-  | GT (Map ((i, i_bt, (it_min, it_max), it_perm), gt'), _bt, here) ->
-    let it_i = IT.sym_ (i, i_bt, here) in
-    let it_perm' =
-      IT.and_ [ IT.lt_ (it_min, it_i) here; IT.lt_ (it_i, it_max) here; it_perm ] here
-    in
+  | GT (Map ((i, i_bt, it_perm), gt'), _bt, _here) ->
     string "map"
     ^^ space
-    ^^ parens (BT.pp i_bt ^^ space ^^ Sym.pp i ^^ semi ^^ space ^^ IT.pp it_perm')
+    ^^ parens (BT.pp i_bt ^^ space ^^ Sym.pp i ^^ semi ^^ space ^^ IT.pp it_perm)
     ^^ braces (nest 2 (break 1 ^^ pp gt') ^^ break 1)
 
 
@@ -280,12 +246,10 @@ let rec subst_ (su : [ `Term of IT.t | `Rename of Sym.t ] Subst.t) (gt_ : t_) : 
   | Return it -> Return (IT.subst su it)
   | Assert (lc, gt') -> Assert (LC.subst su lc, subst su gt')
   | ITE (it, gt_then, gt_else) -> ITE (IT.subst su it, subst su gt_then, subst su gt_else)
-  | Map ((i, bt, (it_min, it_max), it_perm), gt') ->
+  | Map ((i, bt, it_perm), gt') ->
     let i', it_perm = IT.suitably_alpha_rename su.relevant i it_perm in
     let gt' = subst (IT.make_rename ~from:i ~to_:i') gt' in
-    Map
-      ( (i', bt, (IT.subst su it_min, IT.subst su it_max), IT.subst su it_perm),
-        subst su gt' )
+    Map ((i', bt, IT.subst su it_perm), subst su gt')
 
 
 and subst (su : [ `Term of IT.t | `Rename of Sym.t ] Subst.t) (gt : t) : t =
@@ -330,12 +294,8 @@ let rec free_vars_bts_ (gt_ : t_) : BT.t SymMap.t =
       (LC.free_vars_bts lc)
   | ITE (it_if, gt_then, gt_else) ->
     free_vars_bts_list [ return_ it_if Locations.unknown; gt_then; gt_else ]
-  | Map ((i, _bt, (it_min, it_max), it_perm), gt') ->
-    (SymMap.union (fun _ bt1 bt2 ->
-       assert (BT.equal bt1 bt2);
-       Some bt1))
-      (IT.free_vars_bts_list [ it_min; it_max ])
-      (SymMap.remove i (free_vars_bts_list [ return_ it_perm Locations.unknown; gt' ]))
+  | Map ((i, _bt, it_perm), gt') ->
+    SymMap.remove i (free_vars_bts_list [ return_ it_perm Locations.unknown; gt' ])
 
 
 and free_vars_bts (GT (gt_, _, _) : t) : BT.t SymMap.t = free_vars_bts_ gt_
@@ -372,8 +332,7 @@ let rec map_gen_pre (f : t -> t) (g : t) : t =
     | Return it -> Return it
     | Assert (lcs, gt') -> Assert (lcs, map_gen_pre f gt')
     | ITE (it, gt_then, gt_else) -> ITE (it, map_gen_pre f gt_then, map_gen_pre f gt_else)
-    | Map ((i, bt, (it_min, it_max), it_perm), gt') ->
-      Map ((i, bt, (it_min, it_max), it_perm), map_gen_pre f gt')
+    | Map ((i, bt, it_perm), gt') -> Map ((i, bt, it_perm), map_gen_pre f gt')
   in
   GT (gt_, bt, here)
 
@@ -393,8 +352,7 @@ let rec map_gen_post (f : t -> t) (g : t) : t =
     | Assert (lcs, gt') -> Assert (lcs, map_gen_post f gt')
     | ITE (it, gt_then, gt_else) ->
       ITE (it, map_gen_post f gt_then, map_gen_post f gt_else)
-    | Map ((i, bt, (it_min, it_max), it_perm), gt') ->
-      Map ((i, bt, (it_min, it_max), it_perm), map_gen_post f gt')
+    | Map ((i, bt, it_perm), gt') -> Map ((i, bt, it_perm), map_gen_post f gt')
   in
   f (GT (gt_, bt, here))
 

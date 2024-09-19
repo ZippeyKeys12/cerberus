@@ -53,7 +53,7 @@ let rec compile_gt
     * CF.GenTypes.genTypeCategory A.statement_ list
     * CF.GenTypes.genTypeCategory A.expression
   =
-  let (GT (gt_, (_, bt), loc)) = gt in
+  let (GT (gt_, bt, loc)) = gt in
   let mk_expr = Utils.mk_expr ~loc in
   let mk_stmt = Utils.mk_stmt in
   match gt_ with
@@ -194,7 +194,14 @@ let rec compile_gt
                       [ AilEident
                           (Sym.fresh_named
                              (name_of_bt
-                                (Option.value ~default:name (GT.pred gt1))
+                                (Option.value
+                                   ~default:name
+                                   (match GT.term gt1 with
+                                    | Call (fsym, xits) ->
+                                      Some
+                                        (GenUtils.get_mangled_name
+                                           (fsym :: List.map fst xits))
+                                    | _ -> None))
                                 (GT.bt gt1)));
                         AilEident x
                       ]
@@ -275,10 +282,11 @@ let rec compile_gt
                )
            ]),
       res_expr )
-  | Map ((i_sym, i_bt, (it_min, it_max), it_perm), gt') ->
+  | Map ((i_sym, i_bt, it_perm), gt') ->
     let sym_map = Sym.fresh () in
     let b_map = Utils.create_binding sym_map (bt_to_ctype name bt) in
     let b_i = Utils.create_binding i_sym (bt_to_ctype name i_bt) in
+    let it_min, it_max = failwith "convert to elaborated" in
     let b_min, s_min, e_min = compile_it sigma name it_min in
     let b_max, s_max, e_max = compile_it sigma name it_max in
     assert (b_max == []);
