@@ -14,7 +14,8 @@ predicate (datatype seq) IntList(pointer p) {
     return Seq_Nil{};
   } else {
     take H = Owned<struct int_list>(p);
-    take tl = IntList(H.tail);
+    let tmp = H.tail;
+    take tl = IntList(tmp);
     return (Seq_Cons { head: H.head, tail: tl });
   }
 }

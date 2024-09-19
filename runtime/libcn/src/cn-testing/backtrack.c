@@ -58,6 +58,46 @@ int cn_gen_backtrack_relevant_contains(char* varname) {
     return 0;
 }
 
+int cn_gen_backtrack_relevant_remap(char* from, char* to) {
+    struct name_list* curr = to_retry;
+    while (curr != NULL) {
+        if (strcmp(from, curr->name) == 0) {
+            curr->name = to;
+            return 1;
+        }
+
+        curr = curr->next;
+    }
+    return 0;
+}
+
+int cn_gen_backtrack_relevant_remap_many(char* from[], char* to[]) {
+    int successes = 1;
+    for (int i = 0; from[i] != 0; i++) {
+        // Copy the desired variable name
+        char toUniq[100];
+        strcpy(toUniq, to[i]);
+
+        // Give it an impossible name, but unique
+        strcat(toUniq, "$");
+
+        // We do this indirection in case there's a duplicate between `from` and `to`
+        successes *= cn_gen_backtrack_relevant_remap(from[i], toUniq);
+    }
+    for (int i = 0; from[i] != 0; i++) {
+        // Copy the desired variable name
+        char toUniq[100];
+        strcpy(toUniq, to[i]);
+
+        // Give it an impossible name, but unique
+        strcat(toUniq, "$");
+
+        // We do this indirection in case there's a duplicate between `from` and `to`
+        successes *= cn_gen_backtrack_relevant_remap(toUniq, to[i]);
+    }
+    return successes;
+}
+
 void cn_gen_backtrack_alloc_set(size_t sz) {
     type = CN_GEN_BACKTRACK_ALLOC;
 

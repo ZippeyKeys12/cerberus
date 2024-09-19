@@ -152,28 +152,69 @@ let rec compile_gt
                       ] )))
         ]
     in
+    let s_special_cases =
+      match GT.term gt1 with
+      | Call (_fsym, iargs) ->
+        let wrap_to_string (sym : Sym.t) =
+          A.(
+            AilEcast
+              ( C.no_qualifiers,
+                C.pointer_to_char,
+                mk_expr
+                  (AilEstr (None, [ (Locations.other __LOC__, [ Sym.pp_string sym ]) ]))
+              ))
+        in
+        let from_vars = iargs |> List.map fst |> List.map wrap_to_string in
+        let to_vars =
+          iargs
+          |> List.map snd
+          |> List.map IT.is_sym
+          |> List.map Option.get
+          |> List.map fst
+          |> List.map wrap_to_string
+        in
+        let macro_call name vars =
+          A.AilSexpr
+            (mk_expr
+               (AilEcall
+                  (mk_expr (AilEident (Sym.fresh_named name)), List.map mk_expr vars)))
+        in
+        [ macro_call "CN_GEN_LET_FROM" from_vars; macro_call "CN_GEN_LET_TO" to_vars ]
+      | _ -> []
+    in
     let b2, s2, e2 = compile_gt sigma name last_var gt1 in
     let s3 =
-      A.
+      A.(
         [ AilSexpr
             (mk_expr
                (AilEcall
-                  ( mk_expr (AilEident (Sym.fresh_named "CN_GEN_LET_END")),
+                  ( mk_expr (AilEident (Sym.fresh_named "CN_GEN_LET_BODY")),
                     List.map
                       mk_expr
-                      [ AilEident name;
-                        AilEconst
-                          (ConstantInteger
-                             (IConstant (Z.of_int backtracks, Decimal, None)));
-                        AilEident
+                      [ AilEident
                           (Sym.fresh_named
                              (name_of_bt
                                 (Option.value ~default:name (GT.pred gt1))
                                 (GT.bt gt1)));
                         AilEident x
                       ]
-                    @ [ e2; mk_expr (AilEident last_var) ] )))
+                    @ [ e2 ] )))
         ]
+        @ s_special_cases
+        @ [ AilSexpr
+              (mk_expr
+                 (AilEcall
+                    ( mk_expr (AilEident (Sym.fresh_named "CN_GEN_LET_END")),
+                      List.map
+                        mk_expr
+                        [ AilEident name;
+                          AilEconst
+                            (ConstantInteger
+                               (IConstant (Z.of_int backtracks, Decimal, None)));
+                          AilEident x;
+                          AilEident last_var
+                        ] )))
+          ])
     in
     let b4, s4, e4 = compile_gt sigma name x gt2 in
     ( b2 @ [ Utils.create_binding x (bt_to_ctype name (GT.bt gt1)) ] @ b4,
@@ -190,11 +231,20 @@ let rec compile_gt
             (mk_expr
                (AilEcall
                   ( mk_expr (AilEident (Sym.fresh_named "CN_GEN_ASSERT")),
-                    mk_expr (AilEident name)
-                    :: e1
-                    :: List.map
-                         (fun x -> mk_expr (AilEident x))
-                         (last_var :: List.of_seq (SymSet.to_seq (LC.free_vars lc))) )))
+                    (mk_expr (AilEident name) :: [ e1 ])
+                    @ [ mk_expr (AilEident last_var) ]
+                    @ List.map
+                        (fun x ->
+                          mk_expr
+                            (AilEcast
+                               ( C.no_qualifiers,
+                                 C.pointer_to_char,
+                                 mk_expr
+                                   (AilEstr
+                                      ( None,
+                                        [ (Locations.other __LOC__, [ Sym.pp_string x ]) ]
+                                      )) )))
+                        (List.of_seq (SymSet.to_seq (LC.free_vars lc))) )))
         ]
     in
     let b2, s2, e2 = compile_gt sigma name last_var gt' in
