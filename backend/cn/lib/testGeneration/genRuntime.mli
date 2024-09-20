@@ -29,6 +29,7 @@ type term =
         x : Sym.t;
         x_bt : BT.t;
         value : term;
+        last_var : Sym.t;
         rest : term
       }
   | Return of { value : IT.t }
@@ -45,22 +46,28 @@ type term =
       }
   | Map of
       { i : Sym.t;
-        i_bt : BT.t;
-        upper : IT.t;
-        lower : IT.t;
-        guard : IT.t;
+        bt : BT.t;
+        min : IT.t;
+        max : IT.t;
+        perm : IT.t;
         inner : term
       }
 [@@deriving eq, ord]
+
+val pp_term : term -> Pp.document
 
 type definition =
   { name : Sym.t;
     iargs : (Sym.t * BT.t) list;
     oargs : (Sym.t * BT.t) list;
-    body : term option
+    body : term
   }
 [@@deriving eq, ord]
 
+val pp_definition : definition -> Pp.document
+
 type context = (A.ail_identifier * (A.ail_identifier list * definition) list) list
 
-val elaborate : CF.GenTypes.genTypeCategory A.sigma -> GD.context -> context
+val pp : context -> Pp.document
+
+val elaborate : GD.context -> context

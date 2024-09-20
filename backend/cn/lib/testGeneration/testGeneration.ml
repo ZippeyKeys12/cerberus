@@ -37,6 +37,8 @@ let run
   debug_stage "Distribute" (ctx |> GenDefinitions.pp_context |> Pp.plain ~width:80);
   let ctx = ctx |> GenOptimize.optimize in
   debug_stage "Optimize" (ctx |> GenDefinitions.pp_context |> Pp.plain ~width:80);
+  let ctx = ctx |> GenRuntime.elaborate in
+  debug_stage "Elaborated" (ctx |> GenRuntime.pp |> Pp.plain ~width:80);
   let doc = ctx |> GenCodeGen.compile sigma in
   debug_stage "CodeGen" (Pp.plain ~width:80 doc);
   let oc = Stdlib.open_out (Filename.concat output_dir (filename_base ^ "_gen.h")) in

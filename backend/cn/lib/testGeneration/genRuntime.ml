@@ -5,6 +5,7 @@ module IT = IndexTerms
 module LC = LogicalConstraints
 module GT = GenTerms
 module GD = GenDefinitions
+module GBT = GenBaseTypes
 module SymSet = Set.Make (Sym)
 
 type term =
@@ -31,6 +32,7 @@ type term =
         x : Sym.t;
         x_bt : BT.t;
         value : term;
+        last_var : Sym.t;
         rest : term
       }
   | Return of { value : IT.t }
@@ -47,7 +49,7 @@ type term =
       }
   | Map of
       { i : Sym.t;
-        i_bt : BT.t;
+        bt : BT.t;
         min : IT.t;
         max : IT.t;
         perm : IT.t;
@@ -55,15 +57,7 @@ type term =
       }
 [@@deriving eq, ord]
 
-type definition =
-  { name : Sym.t;
-    iargs : (Sym.t * BT.t) list;
-    oargs : (Sym.t * BT.t) list;
-    body : term option
-  }
-[@@deriving eq, ord]
-
-type context = (A.ail_identifier * (A.ail_identifier list * definition) list) list
+let pp_term (_tm : term) : Pp.document = failwith __LOC__
 
 let rec elaborate_gt (vars : Sym.t list) (gt : GT.t) : term =
   let (GT (gt_, bt, loc)) = gt in
@@ -76,7 +70,7 @@ let rec elaborate_gt (vars : Sym.t list) (gt : GT.t) : term =
   | Pick wgts -> Pick { choices = List.map_snd (elaborate_gt vars) wgts }
   | Alloc bytes -> Alloc { bytes }
   | Call (fsym, xits) ->
-    let (iargs : (Sym.t * Sym.t) list), (gt_lets : term -> term) =
+    let (iargs : (Sym.t * Sym.t) list), (gt_lets : Sym.t -> term -> term) =
       List.fold_left
         (fun (yzs, f) (y, it) ->
           let (IT.IT (it_, z_bt, _here)) = it in
@@ -85,18 +79,21 @@ let rec elaborate_gt (vars : Sym.t list) (gt : GT.t) : term =
           | _ ->
             let z = Sym.fresh () in
             ( (y, z) :: yzs,
-              fun gr ->
+              fun w gr ->
                 Let
                   { backtracks = 0;
                     x = z;
                     x_bt = z_bt;
                     value = Return { value = it };
-                    rest = f gr
+                    last_var = w;
+                    rest = f y gr
                   } ))
-        ([], fun gr -> gr)
+        ([], fun _ gr -> gr)
         xits
     in
-    gt_lets (Call { fsym; iargs })
+    gt_lets
+      (match vars with v :: _ -> v | [] -> Sym.fresh_named "bennet")
+      (Call { fsym; iargs })
   | Asgn ((it_addr, sct), value, rest) ->
     let pointer, offset =
       let (IT (it_addr_, _, loc)) = it_addr in
@@ -119,6 +116,7 @@ let rec elaborate_gt (vars : Sym.t list) (gt : GT.t) : term =
         x;
         x_bt = GT.bt gt1;
         value = elaborate_gt vars gt1;
+        last_var = (match vars with v :: _ -> v | [] -> Sym.fresh_named "bennet");
         rest = elaborate_gt (x :: vars) gt2
       }
   | Return value -> Return { value }
@@ -131,9 +129,31 @@ let rec elaborate_gt (vars : Sym.t list) (gt : GT.t) : term =
   | ITE (cond, gt_then, gt_else) ->
     ITE { bt; cond; t = elaborate_gt vars gt_then; f = elaborate_gt vars gt_else }
   | Map ((i, i_bt, perm), inner) ->
-    let min, max = failwith "" in
-    Map { i; i_bt; min; max; perm; inner = elaborate_gt vars inner }
+    let min, max = GenUtils.get_bounds (i, i_bt) perm in
+    Map
+      { i; bt = Map (i_bt, GT.bt inner); min; max; perm; inner = elaborate_gt vars inner }
 
 
-let elaborate : CF.GenTypes.genTypeCategory A.sigma -> GD.context -> context =
-  failwith "TODO"
+type definition =
+  { name : Sym.t;
+    iargs : (Sym.t * BT.t) list;
+    oargs : (Sym.t * BT.t) list;
+    body : term
+  }
+[@@deriving eq, ord]
+
+let pp_definition (_def : definition) : Pp.document = failwith __LOC__
+
+let elaborate_gd (gd : GD.t) : definition =
+  { name = gd.name;
+    iargs = List.map_snd GBT.bt gd.iargs;
+    oargs = List.map_snd GBT.bt gd.oargs;
+    body = elaborate_gt [] (Option.get gd.body)
+  }
+
+
+type context = (A.ail_identifier * (A.ail_identifier list * definition) list) list
+
+let pp (_ctx : context) : Pp.document = Pp.string ("TODO: " ^ __LOC__)
+
+let elaborate (gtx : GD.context) : context = List.map_snd (List.map_snd elaborate_gd) gtx
