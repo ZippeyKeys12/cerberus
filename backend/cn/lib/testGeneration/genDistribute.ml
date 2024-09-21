@@ -3,9 +3,13 @@ module IT = IndexTerms
 module GT = GenTerms
 module GD = GenDefinitions
 
+(* let array_size : int = 20 *)
+
+(* let weight_array_size (_gt : GT.t) : GT.t = failwith __LOC__ *)
+
 let generated_size (bt : BT.t) : int = match bt with Datatype _ -> 100 | _ -> -1
 
-let handle_arbitrary (gt : GT.t) : GT.t =
+let default_weights (gt : GT.t) : GT.t =
   let aux (gt : GT.t) : GT.t =
     let (GT (gt_, bt, loc)) = gt in
     let gt_ =
@@ -22,13 +26,37 @@ let handle_arbitrary (gt : GT.t) : GT.t =
   GT.map_gen_pre aux gt
 
 
-let distribute_gen (gt : GT.t) : GT.t =
-  let rec loop (gt : GT.t) : GT.t =
-    let old_gt = gt in
-    let new_gt = gt |> handle_arbitrary in
-    if GT.equal old_gt new_gt then new_gt else loop new_gt
+let confirm_distribution (gt : GT.t) : GT.t =
+  let rec aux (gt : GT.t) : Locations.t list =
+    let (GT (gt_, _, loc)) = gt in
+    match gt_ with
+    | Arbitrary -> [ loc ]
+    | Uniform _ | Alloc _ | Call _ | Return _ -> []
+    | Pick wgts -> wgts |> List.map snd |> List.map aux |> List.flatten
+    | Asgn (_, _, gt') | Assert (_, gt') | Map ((_, _, _), gt') -> aux gt'
+    | Let (_, _, gt1, gt2) | ITE (_, gt1, gt2) ->
+      [ gt1; gt2 ] |> List.map aux |> List.flatten
   in
-  gt |> loop
+  let failures = aux gt in
+  if List.is_empty failures then
+    gt
+  else
+    failwith
+      Pp.(
+        plain
+          (string "Distribute failure: `arbitrary` still remaining at following locations"
+           ^^ space
+           ^^ brackets (separate_map (comma ^^ break 1) Locations.pp failures)))
+
+
+let distribute_gen (gt : GT.t) : GT.t =
+  (* let rec loop (gt : GT.t) : GT.t =
+     let old_gt = gt in
+     let new_gt = gt |> default_weights in
+     if GT.equal old_gt new_gt then new_gt else loop new_gt
+     in
+     gt |> loop *)
+  gt |> default_weights |> confirm_distribution
 
 
 let distribute_gen_def ({ name; iargs; oargs; body } : GD.t) : GD.t =

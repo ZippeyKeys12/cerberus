@@ -1,69 +1,87 @@
 module IT = IndexTerms
 module GT = GenTerms
 module GD = GenDefinitions
+module GA = GenAnalysis
 module SymSet = Set.Make (Sym)
+module StringSet = Set.Make (String)
+module StringMap = Map.Make (String)
 
-type pass = GT.t -> GT.t
-
-let inline_just_terms (gt : GT.t) : GT.t =
-  let aux (gt : GT.t) : GT.t =
-    let (GT (gt_, _, _)) = gt in
-    match gt_ with
-    | Let (_, x, GT (Return it, _, _), gt') ->
-      let (IT (t_, _, _)) = it in
-      (match t_ with
-       (* Terms to inline *)
-       | Const _ | Sym _ -> GT.subst (IT.make_subst [ (x, it) ]) gt'
-       | _ -> gt)
-    | _ -> gt
-  in
-  GT.map_gen_pre aux gt
-
-
-(* let remove_unused (gt : GT.t) : GT.t =
-   let aux (gt : GT.t) : GT.t =
-   let (GT (gt_, _, _)) = gt in
-   match gt_ with
-   | Let (_, x, _, gt') when not (SymSet.mem x (GT.free_vars gt')) -> gt'
-   | _ -> gt
-   in
-   GT.map_gen_post aux gt *)
-
-type config =
-  { inline_just_terms : bool;
-    remove_unused : bool
+type opt_pass =
+  { name : string;
+    transform : GT.t -> GT.t
   }
 
-let all_passes = { inline_just_terms = true; remove_unused = true }
+module InlineReturns = struct
+  let name = "inline_returns"
 
-let get_first_pass (cfg : config) : pass =
-  [ (if cfg.remove_unused then (* Some remove_unused *) None else None) ]
-  |> List.map Option.to_list
-  |> List.flatten
-  |> List.fold_left (fun acc pass gt -> pass (acc gt)) (fun gt -> gt)
-
-
-let get_repeating_pass (cfg : config) : pass =
-  [ (if cfg.inline_just_terms then Some inline_just_terms else None) ]
-  |> List.map Option.to_list
-  |> List.flatten
-  |> List.fold_left (fun acc pass gt -> pass (acc gt)) (fun gt -> gt)
-
-
-let rec optimize_gen (cfg : config) (gt : GT.t) : GT.t =
-  let first_pass = get_first_pass cfg in
-  let repeating_pass = get_repeating_pass cfg in
-  let loop (gt : GT.t) : GT.t =
-    let old_gt = gt in
-    let new_gt = repeating_pass gt in
-    if GT.equal old_gt new_gt then new_gt else optimize_gen cfg new_gt
-  in
-  gt |> first_pass |> loop
+  let transform (gt : GT.t) : GT.t =
+    let aux (gt : GT.t) : GT.t =
+      let (GT (gt_, _, _)) = gt in
+      match gt_ with
+      | Let (_, x, GT (Return it, _, _), gt') ->
+        let (IT (t_, _, _)) = it in
+        (match t_ with
+         (* Terms to inline *)
+         | Const _ | Sym _ -> GT.subst (IT.make_subst [ (x, it) ]) gt'
+         | _ -> gt)
+      | _ -> gt
+    in
+    GT.map_gen_pre aux gt
 
 
-let optimize_gen_def (cfg : config) ({ name; iargs; oargs; body } : GD.t) : GD.t =
-  { name; iargs; oargs; body = Option.map (optimize_gen cfg) body }
+  let pass = { name; transform }
+end
+
+module Reordering = struct end
+
+module Specialization = struct end
+
+module LazyPruning = struct end
+
+module Fusion = struct
+  module Recursive = struct end
+
+  module Iterative = struct end
+end
+
+module TermSimplification = struct end
+
+module ConstraintPropagation = struct end
+
+module DraGen = struct end
+
+module RemoveUnused = struct
+  let name = "remove_unused"
+
+  let transform (gt : GT.t) : GT.t =
+    let aux (gt : GT.t) : GT.t =
+      let (GT (gt_, _, _)) = gt in
+      match gt_ with
+      | Let (_, x, gt1, gt2) when GA.is_pure gt1 && not (SymSet.mem x (GT.free_vars gt2))
+        ->
+        gt2
+      | _ -> gt
+    in
+    GT.map_gen_post aux gt
 
 
-let optimize ?(cfg : config = all_passes) (ctx : GD.context) : GD.context =
-  List.map_snd (List.map_snd (optimize_gen_def cfg)) ctx
+  let pass = { name; transform }
+end
+
+let all_passes = [ InlineReturns.pass; RemoveUnused.pass ]
+
+let optimize_gen (passes : StringSet.t) (gt : GT.t) : GT.t =
+  all_passes
+  |> List.filter_map (fun { name; transform } ->
+    if StringSet.mem name passes then Some transform else None)
+  |> List.fold_left (fun gt pass -> pass gt) gt
+
+
+let optimize_gen_def (passes : StringSet.t) ({ name; iargs; oargs; body } : GD.t) : GD.t =
+  { name; iargs; oargs; body = Option.map (optimize_gen passes) body }
+
+
+let optimize ?(passes : StringSet.t option = None) (ctx : GD.context) : GD.context =
+  let default = all_passes |> List.map (fun p -> p.name) |> StringSet.of_list in
+  let passes = Option.value ~default passes in
+  List.map_snd (List.map_snd (optimize_gen_def passes)) ctx
