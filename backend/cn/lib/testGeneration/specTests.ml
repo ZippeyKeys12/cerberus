@@ -1,5 +1,9 @@
 module CF = Cerb_frontend
 module A = CF.AilSyntax
+module C = CF.Ctype
+module CtA = Cn_internal_to_ail
+module Utils = Executable_spec_utils
+module BT = BaseTypes
 
 let debug_log_file : out_channel option ref = ref None
 
@@ -39,22 +43,112 @@ let compile_generators
    - Return on failure? Exit on failure?
 *)
 
-let compile_tests (filename : string) (prog5 : unit Mucore.mu_file) : Pp.document =
-  let _insts =
+let compile_tests
+  (filename : string)
+  (sigma : CF.GenTypes.genTypeCategory A.sigma)
+  (prog5 : unit Mucore.mu_file)
+  : Pp.document
+  =
+  let insts =
     prog5
     |> Core_to_mucore.collect_instrumentation
     |> fst
     |> List.filter (fun (inst : Core_to_mucore.instrumentation) ->
       Option.is_some inst.internal)
   in
+  let _main_decl : A.sigma_declaration =
+    ( Sym.fresh_named "main",
+      ( Locations.other __LOC__,
+        CF.Annot.Attrs [],
+        Decl_function
+          ( false,
+            (C.no_qualifiers, CF.Ctype.signed_int),
+            [ (C.no_qualifiers, CF.Ctype.signed_int, false);
+              (C.no_qualifiers, CF.Ctype.pointer_to_char, false)
+            ],
+            false,
+            false,
+            false ) ) )
+  in
+  let declarations : A.sigma_declaration list =
+    (* main_decl :: *)
+    List.map
+      (fun (inst : Core_to_mucore.instrumentation) ->
+        (inst.fn, List.assoc Sym.equal inst.fn sigma.declarations))
+      insts
+  in
+  let args : (Sym.t * (Sym.t * C.ctype) list) list =
+    (* main_decl :: *)
+    List.map
+      (fun (inst : Core_to_mucore.instrumentation) ->
+        ( inst.fn,
+          let _, _, _, xs, _ = List.assoc Sym.equal inst.fn sigma.function_definitions in
+          match List.assoc Sym.equal inst.fn declarations with
+          | _, _, Decl_function (_, _, cts, _, _, _) ->
+            List.combine xs (List.map (fun (_, ct, _) -> ct) cts)
+          | _ -> failwith __LOC__ ))
+      insts
+  in
+  let sigma' = { A.empty_sigma with declarations } in
+  let convert_from ((x, ct) : Sym.t * C.ctype) =
+    CF.Pp_ail.pp_expression
+      (Utils.mk_expr
+         (CtA.wrap_with_convert_from
+            A.(
+              AilEmemberofptr
+                ( Utils.mk_expr (AilEident (Sym.fresh_named "res")),
+                  Sym.Identifier (Locations.other __LOC__, Sym.pp_string x) ))
+            (Memory.bt_of_sct (Sctypes.of_ctype_unsafe (Locations.other __LOC__) ct))))
+  in
+  let suite = List.hd (String.split_on_char '.' filename) in
   let open Pp in
   string "#include "
   ^^ dquotes (string filename)
   ^^ twice hardline
+  ^^ CF.Pp_ail.pp_program ~executable_spec:true ~show_include:true (None, sigma')
+  ^^ hardline
+  ^^ concat_map
+       (fun (inst : Core_to_mucore.instrumentation) ->
+         string "CN_TEST_CASE"
+         ^^ parens
+              (separate
+                 (comma ^^ space)
+                 [ string suite;
+                   Sym.pp inst.fn;
+                   Pp.int 100;
+                   separate_map
+                     (comma ^^ space)
+                     convert_from
+                     (List.assoc Sym.equal inst.fn args)
+                 ])
+         ^^ twice hardline)
+       insts
   ^^ string "int main"
   ^^ parens (string "int argc, char* argv[]")
   ^^ break 1
-  ^^ braces (string "return cn_test_main(argc, argv);")
+  ^^ braces
+       (nest
+          2
+          (hardline
+           ^^ concat_map
+                (fun fn ->
+                  string "cn_register_test_case"
+                  ^^ parens
+                       (separate
+                          (comma ^^ space)
+                          [ string "(char*)" ^^ dquotes (string suite);
+                            string "(char*)" ^^ dquotes (Sym.pp fn);
+                            separate_map
+                              underscore
+                              string
+                              [ "&cn_test"; suite; Sym.pp_string fn ]
+                          ])
+                  ^^ semi
+                  ^^ hardline)
+                (List.map fst declarations)
+           ^^ string "return cn_test_main(argc, argv);")
+        ^^ hardline)
+  ^^ hardline
 
 
 let save (output_dir : string) (filename : string) (doc : Pp.document) : unit =
@@ -81,6 +175,6 @@ let generate
   let generators_doc = compile_generators sigma prog5 in
   let generators_fn = filename_base ^ "_gen.h" in
   save output_dir generators_fn generators_doc;
-  let tests_doc = compile_tests generators_fn prog5 in
+  let tests_doc = compile_tests generators_fn sigma prog5 in
   save output_dir (filename_base ^ "_test.c") tests_doc;
   ()
