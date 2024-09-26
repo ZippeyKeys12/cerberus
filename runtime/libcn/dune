@@ -22,7 +22,8 @@
     gen_alloc.o
     backtrack.o
     uniform.o
-    rand.o))))
+    rand.o
+    test.o))))
 
 (install
  (files
@@ -36,6 +37,8 @@
   (include/cn-testing/uniform.h as runtime/include/cn-testing/uniform.h)
   (include/cn-testing/rand.h as runtime/include/cn-testing/rand.h)
   (include/cn-testing/dsl.h as runtime/include/cn-testing/dsl.h)
+  (include/cn-testing/result.h as runtime/include/cn-testing/result.h)
+  (include/cn-testing/test.h as runtime/include/cn-testing/test.h)
   (include/cn-testing/prelude.h as runtime/include/cn-testing/prelude.h)
   (libcn.a as runtime/libcn.a))
  (section lib)

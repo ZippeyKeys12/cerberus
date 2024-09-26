@@ -6,7 +6,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/tests/cn-test-gen/a.out",
-            "args": [],
+            "args": ["-S", "0cc044527f85c6ce"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/tests/cn-test-gen/test",
             "environment": [],

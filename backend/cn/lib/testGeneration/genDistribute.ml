@@ -49,15 +49,7 @@ let confirm_distribution (gt : GT.t) : GT.t =
            ^^ brackets (separate_map (comma ^^ break 1) Locations.pp failures)))
 
 
-let distribute_gen (gt : GT.t) : GT.t =
-  (* let rec loop (gt : GT.t) : GT.t =
-     let old_gt = gt in
-     let new_gt = gt |> default_weights in
-     if GT.equal old_gt new_gt then new_gt else loop new_gt
-     in
-     gt |> loop *)
-  gt |> default_weights |> confirm_distribution
-
+let distribute_gen (gt : GT.t) : GT.t = gt |> default_weights |> confirm_distribution
 
 let distribute_gen_def ({ name; iargs; oargs; body } : GD.t) : GD.t =
   { name; iargs; oargs; body = Option.map distribute_gen body }
