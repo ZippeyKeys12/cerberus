@@ -8,6 +8,7 @@ module RET = ResourceTypes
 module GBT = GenBaseTypes
 module GT = GenTerms
 module GD = GenDefinitions
+module CtA = Cn_internal_to_ail
 module SymSet = Set.Make (Sym)
 module SymMap = Map.Make (Sym)
 
@@ -28,6 +29,15 @@ let return (x : 'a) : 'a m = fun s -> (x, s)
 let backtrack_num = 10
 
 let cn_return = Sym.fresh_named "cn_return"
+
+let compile_oargs (ret_bt : BT.t) (iargs : (Sym.t * BT.t) list) : (Sym.t * BT.t) list =
+  let ret =
+    match BT.is_record_bt ret_bt with
+    | Some xbts -> List.map_fst (fun x -> Sym.fresh_named (Id.pp_string x)) xbts @ iargs
+    | None -> (cn_return, ret_bt) :: iargs
+  in
+  ret
+
 
 let compile_vars (generated : SymSet.t) (lat : IT.t LAT.t) : SymSet.t * (GT.t -> GT.t) =
   let rec aux (xbts : (Sym.t * BT.t) list) : GT.t -> GT.t =
@@ -122,9 +132,10 @@ let rec compile_it_lat
             |> List.filter (fun (x, _) -> List.mem Sym.equal x desired_iargs)
             |> List.map (fun (x, bt) -> (x, GBT.of_bt bt));
           oargs =
-            (cn_return, pred.oarg_bt)
-            :: (pred.iargs
-                |> List.filter (fun (x, _) -> not (List.mem Sym.equal x desired_iargs)))
+            compile_oargs
+              pred.oarg_bt
+              (pred.iargs
+               |> List.filter (fun (x, _) -> not (List.mem Sym.equal x desired_iargs)))
             |> List.map (fun (x, bt) -> (x, GBT.of_bt bt));
           body = None
         }
@@ -197,9 +208,10 @@ let rec compile_it_lat
             |> List.filter (fun (x, _) -> List.mem Sym.equal x desired_iargs)
             |> List.map (fun (x, bt) -> (x, GBT.of_bt bt));
           oargs =
-            (cn_return, pred.oarg_bt)
-            :: (pred.iargs
-                |> List.filter (fun (x, _) -> not (List.mem Sym.equal x desired_iargs)))
+            compile_oargs
+              pred.oarg_bt
+              (pred.iargs
+               |> List.filter (fun (x, _) -> not (List.mem Sym.equal x desired_iargs)))
             |> List.map (fun (x, bt) -> (x, GBT.of_bt bt));
           body = None
         }

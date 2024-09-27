@@ -323,7 +323,6 @@ let compile_gen_def
   let bt_ret =
     BT.Record (List.map (fun (x, bt) -> (Id.id (Sym.pp_string x), bt)) gr.oargs)
   in
-  CtA.augment_record_map ~cn_sym:name bt_ret;
   let struct_def = CtA.generate_record_opt name bt_ret |> Option.get in
   let decl : A.declaration =
     A.Decl_function
@@ -370,6 +369,14 @@ let compile (sigma : CF.GenTypes.genTypeCategory A.sigma) (ctx : GR.context) : P
         defs)
     |> List.flatten
   in
+  defs
+  |> List.filter (fun ((_name, def) : Sym.t * GR.definition) ->
+    not (List.is_empty def.oargs))
+  |> List.iter (fun ((name, def) : Sym.t * GR.definition) ->
+    let bt =
+      BT.Record (List.map (fun (x, bt) -> (Id.id (Sym.pp_string x), bt)) def.oargs)
+    in
+    CtA.augment_record_map ~cn_sym:name bt);
   let tag_definitions, funcs = List.split (List.map (compile_gen_def sigma) defs) in
   let declarations, function_definitions = List.split funcs in
   let sigma : 'a A.sigma =
