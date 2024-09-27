@@ -92,6 +92,8 @@ let struct_bt pp_loc = function
     Cerb_debug.error ("illtyped index term: not a struct type: " ^ Pp.plain (pp pp_loc bt))
 
 
+let is_record_bt = function Record members -> Some members | _ -> None
+
 let record_bt pp_loc = function
   | Record members -> members
   | bt ->
