@@ -8,6 +8,8 @@ module GD = GenDefinitions
 module GBT = GenBaseTypes
 module SymSet = Set.Make (Sym)
 
+let bennet = Sym.fresh_named "bennet"
+
 type term =
   | Uniform of
       { bt : BT.t;
@@ -59,7 +61,7 @@ type term =
 
 let pp_term (_tm : term) : Pp.document = failwith __LOC__
 
-let rec elaborate_gt (vars : Sym.t list) (gt : GT.t) : term =
+let rec elaborate_gt (inputs : SymSet.t) (vars : Sym.t list) (gt : GT.t) : term =
   let (GT (gt_, bt, loc)) = gt in
   match gt_ with
   | Arbitrary ->
@@ -67,7 +69,7 @@ let rec elaborate_gt (vars : Sym.t list) (gt : GT.t) : term =
       Pp.(
         plain (string "Value from " ^^ Locations.pp loc ^^ string " is still `arbitrary`"))
   | Uniform sz -> Uniform { bt; sz }
-  | Pick wgts -> Pick { choices = List.map_snd (elaborate_gt vars) wgts }
+  | Pick wgts -> Pick { choices = List.map_snd (elaborate_gt inputs vars) wgts }
   | Alloc bytes -> Alloc { bytes }
   | Call (fsym, xits) ->
     let (iargs : (Sym.t * Sym.t) list), (gt_lets : Sym.t -> term -> term) =
@@ -91,9 +93,7 @@ let rec elaborate_gt (vars : Sym.t list) (gt : GT.t) : term =
         ([], fun _ gr -> gr)
         xits
     in
-    gt_lets
-      (match vars with v :: _ -> v | [] -> Sym.fresh_named "bennet")
-      (Call { fsym; iargs })
+    gt_lets (match vars with v :: _ -> v | [] -> bennet) (Call { fsym; iargs })
   | Asgn ((it_addr, sct), value, rest) ->
     let pointer, offset =
       let (IT (it_addr_, _, loc)) = it_addr in
@@ -107,31 +107,61 @@ let rec elaborate_gt (vars : Sym.t list) (gt : GT.t) : term =
           ("unsupported format for address: "
            ^ CF.Pp_utils.to_plain_string (IT.pp it_addr))
     in
-    assert (List.exists (Sym.equal pointer) vars);
+    if not (SymSet.mem pointer inputs || List.exists (Sym.equal pointer) vars) then
+      failwith
+        (Sym.pp_string pointer
+         ^ " not in ["
+         ^ String.concat "; " (List.map Sym.pp_string vars)
+         ^ "] from "
+         ^ Pp.plain (Locations.pp (IT.loc it_addr)));
     Asgn
-      { pointer; offset; sct; value; last_var = pointer; rest = elaborate_gt vars rest }
+      { pointer;
+        offset;
+        sct;
+        value;
+        last_var = (if SymSet.mem pointer inputs then bennet else pointer);
+        rest = elaborate_gt inputs vars rest
+      }
   | Let (backtracks, x, gt1, gt2) ->
     Let
       { backtracks;
         x;
         x_bt = GT.bt gt1;
-        value = elaborate_gt vars gt1;
-        last_var = (match vars with v :: _ -> v | [] -> Sym.fresh_named "bennet");
-        rest = elaborate_gt (x :: vars) gt2
+        value = elaborate_gt inputs vars gt1;
+        last_var = (match vars with v :: _ -> v | [] -> bennet);
+        rest = elaborate_gt inputs (x :: vars) gt2
       }
   | Return value -> Return { value }
   | Assert (prop, rest) ->
     Assert
       { prop;
-        last_var = List.find (fun x -> SymSet.mem x (LC.free_vars prop)) vars;
-        rest = elaborate_gt vars rest
+        last_var =
+          (match List.find_opt (fun x -> SymSet.mem x (LC.free_vars prop)) vars with
+           | Some y -> y
+           | None ->
+             if SymSet.is_empty (SymSet.diff (LC.free_vars prop) inputs) then
+               bennet
+             else
+               failwith __LOC__);
+        rest = elaborate_gt inputs vars rest
       }
   | ITE (cond, gt_then, gt_else) ->
-    ITE { bt; cond; t = elaborate_gt vars gt_then; f = elaborate_gt vars gt_else }
+    ITE
+      { bt;
+        cond;
+        t = elaborate_gt inputs vars gt_then;
+        f = elaborate_gt inputs vars gt_else
+      }
   | Map ((i, i_bt, perm), inner) ->
     let min, max = GenUtils.get_bounds (i, i_bt) perm in
     Map
-      { i; bt = Map (i_bt, GT.bt inner); min; max; perm; inner = elaborate_gt vars inner }
+      { i;
+        bt = Map (i_bt, GT.bt inner);
+        min;
+        max;
+        perm;
+        inner = elaborate_gt inputs vars inner
+      }
 
 
 type definition =
@@ -148,7 +178,7 @@ let elaborate_gd (gd : GD.t) : definition =
   { name = gd.name;
     iargs = List.map_snd GBT.bt gd.iargs;
     oargs = List.map_snd GBT.bt gd.oargs;
-    body = elaborate_gt [] (Option.get gd.body)
+    body = elaborate_gt (SymSet.of_list (List.map fst gd.iargs)) [] (Option.get gd.body)
   }
 
 
