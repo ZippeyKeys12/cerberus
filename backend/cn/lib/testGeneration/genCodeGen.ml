@@ -323,6 +323,7 @@ let compile_gen_def
   let bt_ret =
     BT.Record (List.map (fun (x, bt) -> (Id.id (Sym.pp_string x), bt)) gr.oargs)
   in
+  CtA.augment_record_map ~cn_sym:name bt_ret;
   let struct_def = CtA.generate_record_opt name bt_ret |> Option.get in
   let decl : A.declaration =
     A.Decl_function
