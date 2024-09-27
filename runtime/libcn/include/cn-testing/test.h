@@ -34,7 +34,7 @@ void cn_register_test_case(char* suite, char* name, cn_test_case_fn* func);
 int cn_test_main(int argc, char* argv[]);
 
 #define CN_TEST_INIT()                                                                  \
-    free_all();                     \
+    free_all();                                                                         \
     initialise_ownership_ghost_state();                                                 \
     initialise_ghost_stack_depth();                                                     \
     cn_gen_alloc_reset();

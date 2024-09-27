@@ -20,14 +20,14 @@ cn_pointer* cn_gen_alloc(cn_bits_u64* sz) {
     if (bytes == 0) {
         void* p;
         uint64_t rnd = convert_from_cn_bits_u64(cn_gen_uniform_cn_bits_u64(convert_to_cn_bits_i64(-1)));
-        if ((rnd % 6) == 0) {
+        if ((rnd % 2) == 0) {
             p = NULL;
         }
         else {
             p = alloc(1);
             uint64_t* size = alloc(sizeof(uint64_t));
             *size = bytes + 1;
-            ht_set(pointer_size_map, (signed long*)&p, size);
+            ht_set(pointer_size_map, (intptr_t*)&p, size);
         }
         return convert_to_cn_pointer(p);
     }
@@ -35,7 +35,7 @@ cn_pointer* cn_gen_alloc(cn_bits_u64* sz) {
         void* p = alloc(bytes);
         uint64_t* size = alloc(sizeof(uint64_t));
         *size = bytes;
-        ht_set(pointer_size_map, (signed long*)&p, size);
+        ht_set(pointer_size_map, (intptr_t*)&p, size);
         return convert_to_cn_pointer(p);
     }
 }
