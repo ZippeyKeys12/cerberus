@@ -31,12 +31,13 @@ let backtrack_num = 10
 let cn_return = Sym.fresh_named "cn_return"
 
 let compile_oargs (ret_bt : BT.t) (iargs : (Sym.t * BT.t) list) : (Sym.t * BT.t) list =
-  let ret =
+  (* let ret =
     match BT.is_record_bt ret_bt with
     | Some xbts -> List.map_fst (fun x -> Sym.fresh_named (Id.pp_string x)) xbts @ iargs
     | None -> (cn_return, ret_bt) :: iargs
   in
-  ret
+  ret *)
+  (cn_return, ret_bt) :: iargs
 
 
 let compile_vars (generated : SymSet.t) (lat : IT.t LAT.t) : SymSet.t * (GT.t -> GT.t) =

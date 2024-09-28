@@ -468,7 +468,6 @@ let generate_tests
       Cerb_colour.without_colour
         (fun () ->
           let _, sigma = ail_prog in
-          TestGeneration.run ~output_dir ~filename ~max_unfolds sigma prog5;
           Executable_spec.main
             ~with_ownership_checking
             ~with_test_gen:true
@@ -478,7 +477,8 @@ let generate_tests
             None
             (Some output_dir)
             prog5
-            statement_locs)
+            statement_locs;
+          TestGeneration.run ~output_dir ~filename ~max_unfolds sigma prog5)
         ();
       Resultat.return ())
 
