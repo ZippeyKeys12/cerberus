@@ -40,7 +40,9 @@ let compile_oargs (ret_bt : BT.t) (iargs : (Sym.t * BT.t) list) : (Sym.t * BT.t)
   (cn_return, ret_bt) :: iargs
 
 
-let compile_vars (generated : SymSet.t) (lat : IT.t LAT.t) : SymSet.t * (GT.t -> GT.t) =
+let compile_vars (generated : SymSet.t) (oargs : (Sym.t * GBT.t) list) (lat : IT.t LAT.t)
+  : SymSet.t * (GT.t -> GT.t)
+  =
   let rec aux (xbts : (Sym.t * BT.t) list) : GT.t -> GT.t =
     match xbts with
     | (x, bt) :: xbts' ->
@@ -58,7 +60,14 @@ let compile_vars (generated : SymSet.t) (lat : IT.t LAT.t) : SymSet.t * (GT.t ->
       (SymSet.singleton x, SymMap.add x bt (RET.free_vars_bts ret))
     | Resource ((x, (ret, _)), _, _) -> (SymSet.singleton x, RET.free_vars_bts ret)
     | Constraint (lc, _, _) -> (SymSet.empty, LC.free_vars_bts lc)
-    | I it -> (SymSet.empty, IT.free_vars_bts it)
+    | I it ->
+      ( SymSet.empty,
+        SymMap.union
+          (fun _ bt1 bt2 ->
+            assert (BT.equal bt1 bt2);
+            Some bt1)
+          (IT.free_vars_bts it)
+          (oargs |> List.map_snd GBT.bt |> List.to_seq |> SymMap.of_seq) )
   in
   let xbts =
     xbts |> SymMap.filter (fun x _ -> not (SymSet.mem x generated)) |> SymMap.bindings
@@ -78,7 +87,7 @@ let rec compile_it_lat
   : GT.t m
   =
   (* Generate any free variables needed *)
-  let generated, f_gt_init = compile_vars generated lat in
+  let generated, f_gt_init = compile_vars generated oargs lat in
   (* Compile *)
   let@ gt =
     match lat with
