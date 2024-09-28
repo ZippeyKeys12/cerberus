@@ -8,7 +8,7 @@
 
 #define CN_GEN_INIT(curr)                                                               \
     if (0) {                                                                            \
-    cn_label_##curr##_bennet_backtrack:                                                 \
+    cn_label_bennet_backtrack:                                                 \
         return NULL;                                                                    \
     }
 
@@ -18,7 +18,7 @@
     if (!convert_from_cn_bool(cn_bits_u64_lt(offset, cn_gen_alloc_size(p)))) {          \
         cn_gen_backtrack_relevant_add((char*)#p);                                       \
         cn_gen_backtrack_alloc_set((size_t)convert_from_cn_bits_u64(offset) + 1);       \
-        goto cn_label_##curr##_##last_var##_backtrack;                                  \
+        goto cn_label_##last_var##_backtrack;                                  \
     }                                                                                   \
     void *tmp = convert_from_cn_pointer(cn_pointer_add_cn_bits_u64(p, offset));         \
     *(addr_ty*)tmp = value;                                                             \
@@ -26,7 +26,7 @@
 
 #define CN_GEN_LET_BEGIN(curr, backtracks, var)                                         \
     int var##_backtracks = backtracks;                                                  \
-    cn_label_##curr##_##var##_gen:                                                      \
+    cn_label_##var##_gen:                                                      \
         ;
 
 #define CN_GEN_LET_BODY(ty, var, gen)                                                   \
@@ -42,16 +42,16 @@
 
 #define CN_GEN_LET_END(curr, backtracks, var, last_var)                                 \
         if (cn_gen_backtrack_type() != CN_GEN_BACKTRACK_NONE) {                         \
-        cn_label_##curr##_##var##_backtrack:                                            \
+        cn_label_##var##_backtrack:                                            \
             if (var##_backtracks > 0                                                    \
                     && cn_gen_backtrack_relevant_contains((char*)#var)) {               \
                 var##_backtracks--;                                                     \
                 if (cn_gen_backtrack_type() == CN_GEN_BACKTRACK_ASSERT) {               \
                     cn_gen_backtrack_reset();                                           \
                 }                                                                       \
-                goto cn_label_##curr##_##var##_gen;                                     \
+                goto cn_label_##var##_gen;                                     \
             } else {                                                                    \
-                goto cn_label_##curr##_##last_var##_backtrack;                          \
+                goto cn_label_##last_var##_backtrack;                          \
             }                                                                           \
         }
 
@@ -64,7 +64,7 @@
         for (int i = 0; toAdd[i] != NULL; i++) {                                        \
             cn_gen_backtrack_relevant_add(toAdd[i]);                                    \
         }                                                                               \
-        goto cn_label_##curr##_##last_var##_backtrack;                                  \
+        goto cn_label_##last_var##_backtrack;                                  \
     }
 
 #define CN_GEN_MAP_BEGIN(map, i, i_ty, min, max)                                        \
