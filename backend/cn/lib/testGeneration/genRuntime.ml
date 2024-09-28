@@ -59,7 +59,126 @@ type term =
       }
 [@@deriving eq, ord]
 
-let pp_term (_tm : term) : Pp.document = failwith __LOC__
+let is_return (tm : term) : bool = match tm with Return _ -> true | _ -> false
+
+let rec pp_term (tm : term) : Pp.document =
+  let open Pp in
+  match tm with
+  | Uniform { bt; sz } -> string "uniform" ^^ angles (BT.pp bt) ^^ parens (int sz)
+  | Pick { choices } ->
+    string "pick"
+    ^^ parens
+         (brackets
+            (separate_map
+               (semi ^^ break 1)
+               (fun (w, gt) ->
+                 parens (int w ^^ comma ^^ braces (nest 2 (break 1 ^^ pp_term gt))))
+               choices))
+  | Alloc { bytes } -> string "alloc" ^^ parens (IT.pp bytes)
+  | Call { fsym; iargs } ->
+    Sym.pp fsym
+    ^^ parens
+         (nest
+            2
+            (separate_map
+               (comma ^^ break 1)
+               (fun (x, y) -> Sym.pp x ^^ colon ^^ space ^^ Sym.pp y)
+               iargs))
+  | Asgn
+      { pointer : Sym.t;
+        offset : IT.t;
+        sct : Sctypes.t;
+        value : IT.t;
+        last_var : Sym.t;
+        rest : term
+      } ->
+    Sctypes.pp sct
+    ^^ space
+    ^^ Sym.pp pointer
+    ^^ space
+    ^^ plus
+    ^^ space
+    ^^ IT.pp offset
+    ^^ space
+    ^^ string ":="
+    ^^ space
+    ^^ IT.pp value
+    ^^ semi
+    ^^ space
+    ^^ twice slash
+    ^^ space
+    ^^ string "backtracks to"
+    ^^ space
+    ^^ Sym.pp last_var
+    ^^ break 1
+    ^^ pp_term rest
+  | Let
+      { backtracks : int;
+        x : Sym.t;
+        x_bt : BT.t;
+        value : term;
+        last_var : Sym.t;
+        rest : term
+      } ->
+    string "let"
+    ^^ (if backtracks <> 0 then parens (int backtracks) else empty)
+    ^^ (if is_return value then empty else star)
+    ^^ space
+    ^^ Sym.pp x
+    ^^ space
+    ^^ colon
+    ^^ space
+    ^^ BT.pp x_bt
+    ^^ space
+    ^^ equals
+    ^^ nest 2 (break 1 ^^ pp_term value)
+    ^^ semi
+    ^^ space
+    ^^ twice slash
+    ^^ space
+    ^^ string "backtracks to"
+    ^^ space
+    ^^ Sym.pp last_var
+    ^^ break 1
+    ^^ pp_term rest
+  | Return { value : IT.t } -> string "return" ^^ space ^^ IT.pp value
+  | Assert { prop : LC.t; last_var : Sym.t; rest : term } ->
+    string "assert"
+    ^^ parens (nest 2 (break 1 ^^ LC.pp prop) ^^ break 1)
+    ^^ semi
+    ^^ space
+    ^^ twice slash
+    ^^ space
+    ^^ string "backtracks to"
+    ^^ space
+    ^^ Sym.pp last_var
+    ^^ break 1
+    ^^ pp_term rest
+  | ITE { bt : BT.t; cond : IT.t; t : term; f : term } ->
+    string "if"
+    ^^ space
+    ^^ parens (IT.pp cond)
+    ^^ space
+    ^^ braces (c_comment (BT.pp bt) ^^ nest 2 (break 1 ^^ pp_term t) ^^ break 1)
+    ^^ space
+    ^^ string "else"
+    ^^ space
+    ^^ braces (nest 2 (break 1 ^^ pp_term f) ^^ break 1)
+  | Map { i : Sym.t; bt : BT.t; min : IT.t; max : IT.t; perm : IT.t; inner : term } ->
+    let i_bt, _ = BT.map_bt bt in
+    string "map"
+    ^^ space
+    ^^ parens
+         (BT.pp i_bt
+          ^^ space
+          ^^ Sym.pp i
+          ^^ semi
+          ^^ space
+          ^^ IT.pp perm
+          ^^ c_comment
+               (IT.pp min ^^ string " <= " ^^ Sym.pp i ^^ string " <= " ^^ IT.pp max))
+    ^^ braces (c_comment (BT.pp bt) ^^ nest 2 (break 1 ^^ pp_term inner) ^^ break 1)
+
 
 let rec elaborate_gt (inputs : SymSet.t) (vars : Sym.t list) (gt : GT.t) : term =
   let (GT (gt_, bt, loc)) = gt in
@@ -172,7 +291,29 @@ type definition =
   }
 [@@deriving eq, ord]
 
-let pp_definition (_def : definition) : Pp.document = failwith __LOC__
+let pp_definition (def : definition) : Pp.document =
+  let open Pp in
+  group
+    (string "generator"
+     ^^ space
+     ^^ braces
+          (separate_map
+             (comma ^^ space)
+             (fun (x, ty) -> BT.pp ty ^^ space ^^ Sym.pp x)
+             def.oargs)
+     ^^ space
+     ^^ Sym.pp def.name
+     ^^ parens
+          (separate_map
+             (comma ^^ space)
+             (fun (x, ty) -> BT.pp ty ^^ space ^^ Sym.pp x)
+             def.iargs)
+     ^^ space
+     ^^ lbrace
+     ^^ nest 2 (break 1 ^^ pp_term def.body)
+     ^^ break 1
+     ^^ rbrace)
+
 
 let elaborate_gd (gd : GD.t) : definition =
   { name = gd.name;
@@ -184,6 +325,18 @@ let elaborate_gd (gd : GD.t) : definition =
 
 type context = (A.ail_identifier * (A.ail_identifier list * definition) list) list
 
-let pp (_ctx : context) : Pp.document = Pp.string ("TODO: " ^ __LOC__)
+let pp (ctx : context) : Pp.document =
+  let defns = ctx |> List.map snd |> List.flatten |> List.map snd in
+  let open Pp in
+  surround_separate_map
+    2
+    1
+    empty
+    lbracket
+    (semi ^^ twice hardline)
+    rbracket
+    pp_definition
+    defns
+
 
 let elaborate (gtx : GD.context) : context = List.map_snd (List.map_snd elaborate_gd) gtx
