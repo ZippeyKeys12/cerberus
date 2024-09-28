@@ -207,7 +207,7 @@ let rec elaborate_gt (inputs : SymSet.t) (vars : Sym.t list) (gt : GT.t) : term 
                     x_bt = z_bt;
                     value = Return { value = it };
                     last_var = w;
-                    rest = f y gr
+                    rest = f z gr
                   } ))
         ([], fun _ gr -> gr)
         xits
