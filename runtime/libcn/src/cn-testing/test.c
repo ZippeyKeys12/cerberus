@@ -33,10 +33,7 @@ void cn_register_test_case(char* suite, char* name, cn_test_case_fn* func) {
     };
 }
 
-struct cn_test_generator_result {
-    void* result;
-    int failures[10];
-};
+static enum cn_test_result test_results[CN_TEST_MAX_TEST_CASES];
 
 int cn_test_main(int argc, char* argv[]) {
     cn_gen_srand(time(NULL));
@@ -53,17 +50,26 @@ int cn_test_main(int argc, char* argv[]) {
     printf("Using seed: %016llx\n", seed);
     cn_gen_srand(seed);
 
-    struct cn_test_summary summary = { .fails = 0, .passes = 0, .skips = 0 };
-
     for (int i = 0; i < num_test_cases; i++) {
         struct cn_test_case* test_case = &test_cases[i];
         printf("Testing %s::%s: ", test_case->suite, test_case->name);
-        switch (test_case->func()) {
+        test_results[i] = test_case->func();
+        printf("\n");
+    }
+
+    printf("\nTesting Summary:\n");
+    for (int i = 0; i < num_test_cases; i++) {
+        struct cn_test_case* test_case = &test_cases[i];
+        printf("%s::%s - ", test_case->suite, test_case->name);
+        switch (test_results[i]) {
         case CN_TEST_PASS:
             printf("PASSED");
             break;
         case CN_TEST_FAIL:
             printf("FAILED");
+            break;
+        case CN_TEST_GEN_FAIL:
+            printf("FAILED TO GENERATE VALID INPUT");
             break;
         case CN_TEST_SKIP:
             printf("SKIPPED");
@@ -71,6 +77,7 @@ int cn_test_main(int argc, char* argv[]) {
         }
         printf("\n");
     }
+    printf("\n");
 
     return 0;
 }

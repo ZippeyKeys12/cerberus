@@ -25,6 +25,10 @@ void cn_register_test_case(char* suite, char* name, cn_test_case_fn* func);
         for (int i = 0; i < Samples; i++) {\
             CN_TEST_INIT();         \
             struct cn_gen_##Name##_record *res = cn_gen_##Name(); \
+            if (cn_gen_backtrack_type() != CN_GEN_BACKTRACK_NONE) { \
+                printf("Failed to generate input for %s::%s\n", #Suite, #Name);\
+                return CN_TEST_GEN_FAIL; \
+            }\
             Name(__VA_ARGS__);                                                             \
         }\
                                                                                \
