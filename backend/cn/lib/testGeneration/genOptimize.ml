@@ -1,4 +1,5 @@
 module IT = IndexTerms
+module LC = LogicalConstraints
 module GT = GenTerms
 module GD = GenDefinitions
 module GA = GenAnalysis
@@ -11,36 +12,73 @@ type opt_pass =
     transform : GT.t -> GT.t
   }
 
-module InlineReturns = struct
-  let name = "inline_returns"
+(** This pass ... *)
+module Inline = struct
+  (** This pass ... *)
+  module Returns = struct
+    let name = "inline_return"
 
-  let transform (gt : GT.t) : GT.t =
-    let aux (gt : GT.t) : GT.t =
-      let (GT (gt_, _, _)) = gt in
-      match gt_ with
-      | Let (_, x, GT (Return it, _, _), gt') ->
-        let (IT (t_, _, _)) = it in
-        (match t_ with
-         (* Terms to inline *)
-         | Const _ | Sym _ -> GT.subst (IT.make_subst [ (x, it) ]) gt'
-         | _ -> gt)
-      | _ -> gt
-    in
-    GT.map_gen_pre aux gt
+    let transform (gt : GT.t) : GT.t =
+      let aux (gt : GT.t) : GT.t =
+        let (GT (gt_, _, _)) = gt in
+        match gt_ with
+        | Let (_, x, GT (Return it, _, _), gt') ->
+          let (IT (t_, _, _)) = it in
+          (match t_ with
+           (* Terms to inline *)
+           | Const _ | Sym _ -> GT.subst (IT.make_subst [ (x, it) ]) gt'
+           | _ -> gt)
+        | _ -> gt
+      in
+      GT.map_gen_pre aux gt
 
 
-  let pass = { name; transform }
+    let pass = { name; transform }
+  end
+
+  (** This pass ... *)
+  module SingleUse = struct
+    let name = "inline_single_use"
+
+    let transform (gt : GT.t) : GT.t =
+      let single_uses = GA.get_single_uses ~pure:true gt in
+      let aux (gt : GT.t) : GT.t =
+        let (GT (gt_, _, _)) = gt in
+        match gt_ with
+        | Let (_, x, GT (Return it, _, _), gt') ->
+          if SymSet.mem x single_uses then
+            GT.subst (IT.make_subst [ (x, it) ]) gt'
+          else
+            gt
+        | _ -> gt
+      in
+      GT.map_gen_pre aux gt
+
+
+    let pass = { name; transform }
+  end
+
+  let passes = [ SingleUse.pass ]
 end
 
+(** This pass ... *)
 module Reordering = struct end
 
+(** This pass ... *)
 module Specialization = struct end
 
+(** This pass ... *)
+module BetterAllocations = struct end
+
+(** This pass ... *)
 module LazyPruning = struct end
 
+(** This pass ... *)
 module Fusion = struct
+  (** This pass ... *)
   module Recursive = struct end
 
+  (** This pass ... *)
   module Iterative = struct end
 end
 
@@ -73,10 +111,13 @@ module TermSimplification = struct
   let pass = { name; transform }
 end
 
+(** This pass ... *)
 module ConstraintPropagation = struct end
 
+(** This pass ... *)
 module DraGen = struct end
 
+(** This pass removes unused variables *)
 module RemoveUnused = struct
   let name = "remove_unused"
 
@@ -92,16 +133,27 @@ module RemoveUnused = struct
     GT.map_gen_post aux gt
 
 
-  let pass = { name; transform }
+  let passes = [ { name; transform } ]
 end
 
-let all_passes = [ InlineReturns.pass; RemoveUnused.pass ]
+let all_passes = Inline.passes @ RemoveUnused.passes @ [ TermSimplification.pass ]
 
 let optimize_gen (passes : StringSet.t) (gt : GT.t) : GT.t =
-  all_passes
-  |> List.filter_map (fun { name; transform } ->
-    if StringSet.mem name passes then Some transform else None)
-  |> List.fold_left (fun gt pass -> pass gt) gt
+  let passes =
+    all_passes
+    |> List.filter_map (fun { name; transform } ->
+      if StringSet.mem name passes then Some transform else None)
+  in
+  let opt (gt : GT.t) : GT.t = List.fold_left (fun gt pass -> pass gt) gt passes in
+  let rec aux (gt : GT.t) (fuel : int) : GT.t =
+    if fuel <= 0 then
+      gt
+    else (
+      let old_gt = gt in
+      let new_gt = opt gt in
+      if GT.equal old_gt new_gt then new_gt else aux new_gt (fuel - 1))
+  in
+  aux gt 5
 
 
 let optimize_gen_def (passes : StringSet.t) ({ name; iargs; oargs; body } : GD.t) : GD.t =
