@@ -54,15 +54,15 @@ let get_single_uses ?(pure : bool = false) (gt : GT.t) : SymSet.t =
       iargs |> List.map snd |> List.map aux_it |> List.fold_left union SymMap.empty
     | Asgn ((it_addr, _), it_val, gt') ->
       aux gt' :: List.map aux_it [ it_addr; it_val ] |> List.fold_left union SymMap.empty
-    | Let (_, _, gt1, gt2) -> union (aux gt1) (aux gt2)
+    | Let (_, x, gt1, gt2) -> SymMap.remove x (union (aux gt1) (aux gt2))
     | Assert (lc, gt') -> union (aux gt') (aux_lc lc)
     | ITE (it_if, gt_then, gt_else) ->
       aux_it it_if :: List.map aux [ gt_then; gt_else ]
       |> List.fold_left union SymMap.empty
-    | Map ((x, _, it_perm), gt') ->
+    | Map ((i, _, it_perm), gt') ->
       union
         (aux_it it_perm)
-        (gt' |> aux |> SymMap.remove x |> SymMap.map (Option.map (Int.add 1)))
+        (gt' |> aux |> SymMap.remove i |> SymMap.map (Option.map (Int.add 1)))
   in
   aux gt
   |> SymMap.filter (fun _ -> Option.equal Int.equal (Some 1))
