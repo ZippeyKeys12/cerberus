@@ -4,6 +4,7 @@ module GT = GenTerms
 module GD = GenDefinitions
 module GA = GenAnalysis
 module SymSet = Set.Make (Sym)
+module SymMap = Map.Make (Sym)
 module StringSet = Set.Make (String)
 module StringMap = Map.Make (String)
 
@@ -36,29 +37,113 @@ module Inline = struct
     let pass = { name; transform }
   end
 
-  (** This pass ... *)
   module SingleUse = struct
-    let name = "inline_single_use"
+    module IndexTerms = struct
+      let name = "inline_single_use_pure"
 
-    let transform (gt : GT.t) : GT.t =
-      let single_uses = GA.get_single_uses ~pure:true gt in
-      let aux (gt : GT.t) : GT.t =
-        let (GT (gt_, _, _)) = gt in
-        match gt_ with
-        | Let (_, x, GT (Return it, _, _), gt') ->
-          if SymSet.mem x single_uses then
-            GT.subst (IT.make_subst [ (x, it) ]) gt'
-          else
-            gt
-        | _ -> gt
-      in
-      GT.map_gen_pre aux gt
+      let transform (gt : GT.t) : GT.t =
+        let aux (gt : GT.t) : GT.t =
+          let (GT (gt_, _, _)) = gt in
+          match gt_ with
+          | Let (_, x, GT (Return it, _, _), gt') ->
+            let single_uses = GA.get_single_uses ~pure:true gt' in
+            if SymSet.mem x single_uses then
+              GT.subst (IT.make_subst [ (x, it) ]) gt'
+            else
+              gt
+          | _ -> gt
+        in
+        GT.map_gen_pre aux gt
 
 
-    let pass = { name; transform }
+      let pass = { name; transform }
+    end
+
+    module GenTerms = struct
+      let name = "inline_single_use_gen"
+
+      let transform (gt : GT.t) : GT.t =
+        let union = SymMap.union (fun _ a b -> Some (not (a || b))) in
+        let subst (x : Sym.t) (gt_repl : GT.t) (gt : GT.t) : GT.t =
+          let aux (gt : GT.t) : GT.t =
+            let (GT (gt_, _, _)) = gt in
+            match gt_ with
+            | Return (IT (Sym y, _, _)) when Sym.equal x y -> gt_repl
+            | _ -> gt
+          in
+          GT.map_gen_post aux gt
+        in
+        let of_symset (s : SymSet.t) : bool SymMap.t =
+          s |> SymSet.to_seq |> Seq.map (fun x -> (x, false)) |> SymMap.of_seq
+        in
+        let rec aux (gt : GT.t) : GT.t * bool SymMap.t =
+          let (GT (gt_, _, loc)) = gt in
+          match gt_ with
+          | Arbitrary | Uniform _ -> (gt, SymMap.empty)
+          | Pick wgts ->
+            let wgts, only_ret =
+              wgts
+              |> List.map_snd aux
+              |> List.map (fun (a, (b, c)) -> ((a, b), c))
+              |> List.split
+            in
+            (GT.pick_ wgts loc, List.fold_left union SymMap.empty only_ret)
+          | Alloc it -> (gt, it |> IT.free_vars |> of_symset)
+          | Call (_fsym, xits) ->
+            ( gt,
+              xits
+              |> List.map snd
+              |> List.map IT.free_vars
+              |> List.map of_symset
+              |> List.fold_left union SymMap.empty )
+          | Asgn ((it_addr, sct), it_val, gt') ->
+            let only_ret =
+              [ it_addr; it_val ]
+              |> List.map IT.free_vars
+              |> List.map of_symset
+              |> List.fold_left union SymMap.empty
+            in
+            let gt', only_ret' = aux gt' in
+            (GT.asgn_ ((it_addr, sct), it_val, gt') loc, union only_ret only_ret')
+          | Let (backtracks, x, gt_inner, gt') ->
+            let gt', only_ret = aux gt' in
+            let only_ret = SymMap.remove x only_ret in
+            if Option.equal Bool.equal (SymMap.find_opt x only_ret) (Some true) then
+              (subst x gt_inner gt', only_ret)
+            else (
+              let gt_inner, only_ret' = aux gt_inner in
+              (GT.let_ (backtracks, (x, gt_inner), gt') loc, union only_ret only_ret'))
+          | Return it ->
+            ( gt,
+              (match IT.is_sym it with
+               | Some (x, _bt) -> SymMap.singleton x true
+               | None -> it |> IT.free_vars |> of_symset) )
+          | Assert (lc, gt') ->
+            let only_ret = lc |> LC.free_vars |> of_symset in
+            let gt', only_ret' = aux gt' in
+            (GT.assert_ (lc, gt') loc, union only_ret only_ret')
+          | ITE (it_if, gt_then, gt_else) ->
+            let only_ret = it_if |> IT.free_vars |> of_symset in
+            let gt_then, only_ret' = aux gt_then in
+            let gt_else, only_ret'' = aux gt_else in
+            ( GT.ite_ (it_if, gt_then, gt_else) loc,
+              [ only_ret; only_ret'; only_ret'' ] |> List.fold_left union SymMap.empty )
+          | Map ((i, i_bt, it_perm), gt_inner) ->
+            let only_ret = it_perm |> IT.free_vars |> SymSet.remove i |> of_symset in
+            let gt_inner, only_ret' = aux gt_inner in
+            let only_ret' = only_ret' |> SymMap.remove i |> SymMap.map (fun _ -> false) in
+            (GT.map_ ((i, i_bt, it_perm), gt_inner) loc, union only_ret only_ret')
+        in
+        fst (aux gt)
+
+
+      let pass = { name; transform }
+    end
+
+    let passes = [ IndexTerms.pass; GenTerms.pass ]
   end
 
-  let passes = [ SingleUse.pass ]
+  let passes = Returns.pass :: SingleUse.passes
 end
 
 (** This pass ... *)
