@@ -68,8 +68,6 @@ let rec implicit_contraints (gt : GT.t) : GT.t =
     | Arbitrary | Uniform _ | Alloc _ | Call _ | Return _ -> gt
     | Pick wgts -> GT.pick_ (List.map_snd aux wgts) here
     | Asgn ((it_addr, sct), it_val, gt') ->
-      print_string (Pp.plain (IT.pp it_addr));
-      print_newline ();
       let gt = GT.asgn_ ((it_addr, sct), it_val, aux gt') here in
       Option.value
         ~default:gt
