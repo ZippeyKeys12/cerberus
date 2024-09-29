@@ -67,7 +67,11 @@ let compile_vars (generated : SymSet.t) (oargs : (Sym.t * GBT.t) list) (lat : IT
             assert (BT.equal bt1 bt2);
             Some bt1)
           (IT.free_vars_bts it)
-          (oargs |> List.map_snd GBT.bt |> List.to_seq |> SymMap.of_seq) )
+          (oargs
+           |> List.filter (fun (x, _) -> not (Sym.equal x cn_return))
+           |> List.map_snd GBT.bt
+           |> List.to_seq
+           |> SymMap.of_seq) )
   in
   let xbts =
     xbts |> SymMap.filter (fun x _ -> not (SymSet.mem x generated)) |> SymMap.bindings
