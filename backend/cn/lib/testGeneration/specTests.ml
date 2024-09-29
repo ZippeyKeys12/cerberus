@@ -82,7 +82,6 @@ let compile_tests
           | _ -> failwith __LOC__ ))
       insts
   in
-  let sigma' = { A.empty_sigma with declarations } in
   let convert_from ((x, ct) : Sym.t * C.ctype) =
     CF.Pp_ail.pp_expression
       (Utils.mk_expr
@@ -97,9 +96,16 @@ let compile_tests
   let open Pp in
   string "#include "
   ^^ dquotes (string filename)
-  ^^ twice hardline
-  ^^ CF.Pp_ail.pp_program ~executable_spec:true ~show_include:true (None, sigma')
   ^^ hardline
+  ^^ string "#include "
+  ^^ dquotes
+       (string
+          (String.sub filename 0 (String.length filename - String.length "_gen.h")
+           ^ "-exec.c"))
+  ^^ hardline
+  ^^ string "#include "
+  ^^ dquotes (string "cn.c")
+  ^^ twice hardline
   ^^ concat_map
        (fun (inst : Core_to_mucore.instrumentation) ->
          string "CN_TEST_CASE"
