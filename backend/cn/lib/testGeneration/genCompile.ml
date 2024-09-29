@@ -329,14 +329,14 @@ let compile_spec (preds : Mucore.T.resource_predicates) (name : Sym.t) (at : 'a 
   fun s -> ((), GD.add_context gd s)
 
 
-let compile ?(ctx : GD.context option) (prog5 : unit Mucore.mu_file) : GD.context =
-  let preds = prog5.mu_resource_predicates in
+let compile
+  ?(ctx : GD.context option)
+  (preds : Mucore.T.resource_predicates)
+  (insts : Core_to_mucore.instrumentation list)
+  : GD.context
+  =
   let context_specs =
-    prog5
-    |> Core_to_mucore.collect_instrumentation
-    |> fst
-    |> List.filter (fun (inst : Core_to_mucore.instrumentation) ->
-      Option.is_some inst.internal)
+    insts
     |> List.map (fun (inst : Core_to_mucore.instrumentation) ->
       compile_spec preds inst.fn (Option.get inst.internal))
     |> List.fold_left

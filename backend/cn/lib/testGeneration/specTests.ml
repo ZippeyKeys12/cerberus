@@ -19,8 +19,9 @@ let debug_stage (stage : string) (str : string) : unit =
 let compile_generators
   (sigma : CF.GenTypes.genTypeCategory A.sigma)
   (prog5 : unit Mucore.mu_file)
+  (insts : Core_to_mucore.instrumentation list)
   =
-  let ctx = prog5 |> GenCompile.compile in
+  let ctx = GenCompile.compile prog5.mu_resource_predicates insts in
   debug_stage "Compile" (ctx |> GenDefinitions.pp_context |> Pp.plain ~width:80);
   let ctx = ctx |> GenNormalize.normalize prog5 in
   debug_stage "Normalize" (ctx |> GenDefinitions.pp_context |> Pp.plain ~width:80);
@@ -46,16 +47,9 @@ let compile_generators
 let compile_tests
   (filename : string)
   (sigma : CF.GenTypes.genTypeCategory A.sigma)
-  (prog5 : unit Mucore.mu_file)
+  (insts : Core_to_mucore.instrumentation list)
   : Pp.document
   =
-  let insts =
-    prog5
-    |> Core_to_mucore.collect_instrumentation
-    |> fst
-    |> List.filter (fun (inst : Core_to_mucore.instrumentation) ->
-      Option.is_some inst.internal)
-  in
   let _main_decl : A.sigma_declaration =
     ( Sym.fresh_named "main",
       ( Locations.other __LOC__,
@@ -72,10 +66,9 @@ let compile_tests
   in
   let declarations : A.sigma_declaration list =
     (* main_decl :: *)
-    List.map
-      (fun (inst : Core_to_mucore.instrumentation) ->
-        (inst.fn, List.assoc Sym.equal inst.fn sigma.declarations))
-      insts
+    insts
+    |> List.map (fun (inst : Core_to_mucore.instrumentation) ->
+      (inst.fn, List.assoc Sym.equal inst.fn sigma.declarations))
   in
   let args : (Sym.t * (Sym.t * C.ctype) list) list =
     (* main_decl :: *)
@@ -171,10 +164,23 @@ let generate
             [ Open_wronly; Open_creat; (* Open_append; *) Open_trunc; Open_text ]
             0o666
             "generatorCompilation.log");
+  let insts =
+    prog5
+    |> Core_to_mucore.collect_instrumentation
+    |> fst
+    |> List.filter (fun (inst : Core_to_mucore.instrumentation) ->
+      Option.is_some inst.internal)
+    |> List.filter (fun (inst : Core_to_mucore.instrumentation) ->
+      match List.assoc Sym.equal inst.fn sigma.declarations with
+      | _, _, A.Decl_function (_, _, _, _, true, _) ->
+        false (* exclude `inline` functions*)
+      | _ -> true)
+  in
+  if List.is_empty insts then failwith "No testable functions";
   let filename_base = filename |> Filename.basename |> Filename.chop_extension in
-  let generators_doc = compile_generators sigma prog5 in
+  let generators_doc = compile_generators sigma prog5 insts in
   let generators_fn = filename_base ^ "_gen.h" in
   save output_dir generators_fn generators_doc;
-  let tests_doc = compile_tests generators_fn sigma prog5 in
+  let tests_doc = compile_tests generators_fn sigma insts in
   save output_dir (filename_base ^ "_test.c") tests_doc;
   ()
