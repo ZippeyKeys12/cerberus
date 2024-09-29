@@ -44,7 +44,34 @@ module Fusion = struct
   module Iterative = struct end
 end
 
-module TermSimplification = struct end
+(** This pass uses [Simplify] to rewrite [IndexTerms.t] *)
+module TermSimplification = struct
+  let name = "simplify_term"
+
+  let transform (gt : GT.t) : GT.t =
+    let simp_it (it : IT.t) : IT.t =
+      Simplify.IndexTerms.simp (Simplify.default Global.empty) it
+    in
+    let simp_lc (lc : LC.t) : LC.t =
+      Simplify.LogicalConstraints.simp (Simplify.default Global.empty) lc
+    in
+    let aux (gt : GT.t) : GT.t =
+      let (GT (gt_, bt, loc)) = gt in
+      match gt_ with
+      | Alloc it -> GT.alloc_ (simp_it it) loc
+      | Call (fsym, iargs) -> GT.call_ (fsym, List.map_snd simp_it iargs) bt loc
+      | Asgn ((it_addr, sct), it_val, gt') ->
+        GT.asgn_ ((simp_it it_addr, sct), simp_it it_val, gt') loc
+      | Return it -> GT.return_ (simp_it it) loc
+      | Assert (lc, gt') -> GT.assert_ (simp_lc lc, gt') loc
+      | Map ((i, i_bt, it_perm), gt') -> GT.map_ ((i, i_bt, simp_it it_perm), gt') loc
+      | _ -> gt
+    in
+    GT.map_gen_pre aux gt
+
+
+  let pass = { name; transform }
+end
 
 module ConstraintPropagation = struct end
 
