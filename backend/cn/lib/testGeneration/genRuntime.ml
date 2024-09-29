@@ -192,8 +192,8 @@ let rec elaborate_gt (inputs : SymSet.t) (vars : Sym.t list) (gt : GT.t) : term 
   | Alloc bytes -> Alloc { bytes }
   | Call (fsym, xits) ->
     let (iargs : (Sym.t * Sym.t) list), (gt_lets : Sym.t -> term -> term) =
-      List.fold_left
-        (fun (yzs, f) (y, it) ->
+      List.fold_right
+        (fun (y, it) (yzs, f) ->
           let (IT.IT (it_, z_bt, _here)) = it in
           match it_ with
           | Sym z -> ((y, z) :: yzs, f)
@@ -209,8 +209,8 @@ let rec elaborate_gt (inputs : SymSet.t) (vars : Sym.t list) (gt : GT.t) : term 
                     last_var = w;
                     rest = f z gr
                   } ))
-        ([], fun _ gr -> gr)
         xits
+        ([], fun _ gr -> gr)
     in
     gt_lets (match vars with v :: _ -> v | [] -> bennet) (Call { fsym; iargs })
   | Asgn ((it_addr, sct), value, rest) ->
