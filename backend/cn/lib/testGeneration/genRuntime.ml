@@ -272,7 +272,7 @@ let rec elaborate_gt (inputs : SymSet.t) (vars : Sym.t list) (gt : GT.t) : term 
         f = elaborate_gt inputs vars gt_else
       }
   | Map ((i, i_bt, perm), inner) ->
-    let min, max = GenUtils.get_bounds (i, i_bt) perm in
+    let min, max = GenAnalysis.get_bounds (i, i_bt) perm in
     Map
       { i;
         bt = Map (i_bt, GT.bt inner);

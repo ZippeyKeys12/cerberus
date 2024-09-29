@@ -1,7 +1,9 @@
 module BT = BaseTypes
 module IT = IndexTerms
+module LC = LogicalConstraints
 module GT = GenTerms
 module GD = GenDefinitions
+module SymMap = Map.Make (Sym)
 
 let backtracks = 10
 
