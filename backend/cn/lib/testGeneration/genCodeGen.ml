@@ -103,8 +103,7 @@ let rec compile_term
             (Utils.mk_expr
                (AilEcall
                   ( Utils.mk_expr (AilEident (Sym.fresh_named "CN_GEN_ASSIGN")),
-                    [ Utils.mk_expr (AilEident name);
-                      Utils.mk_expr (AilEident pointer);
+                    [ Utils.mk_expr (AilEident pointer);
                       e1;
                       Utils.mk_expr
                         (AilEident
@@ -139,8 +138,7 @@ let rec compile_term
                   ( Utils.mk_expr (AilEident (Sym.fresh_named "CN_GEN_LET_BEGIN")),
                     List.map
                       Utils.mk_expr
-                      [ AilEident name;
-                        AilEconst
+                      [ AilEconst
                           (ConstantInteger
                              (IConstant (Z.of_int backtracks, Decimal, None)));
                         AilEident x
@@ -203,8 +201,7 @@ let rec compile_term
                     ( mk_expr (AilEident (Sym.fresh_named "CN_GEN_LET_END")),
                       List.map
                         mk_expr
-                        [ AilEident name;
-                          AilEconst
+                        [ AilEconst
                             (ConstantInteger
                                (IConstant (Z.of_int backtracks, Decimal, None)));
                           AilEident x;
@@ -225,7 +222,7 @@ let rec compile_term
             (mk_expr
                (AilEcall
                   ( mk_expr (AilEident (Sym.fresh_named "CN_GEN_ASSERT")),
-                    (mk_expr (AilEident name) :: [ e1 ])
+                    [ e1 ]
                     @ [ mk_expr (AilEident last_var) ]
                     @ List.map
                         (fun x ->
@@ -340,9 +337,7 @@ let compile_gen_def
     A.(
       AilSexpr
         (Utils.mk_expr
-           (AilEcall
-              ( Utils.mk_expr (AilEident (Sym.fresh_named "CN_GEN_INIT")),
-                [ Utils.mk_expr (AilEident name) ] ))))
+           (AilEcall (Utils.mk_expr (AilEident (Sym.fresh_named "CN_GEN_INIT")), []))))
   in
   let b2, s2, e2 = compile_term sigma name gr.body in
   let sigma_def : CF.GenTypes.genTypeCategory A.sigma_function_definition =
