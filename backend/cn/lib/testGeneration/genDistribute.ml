@@ -27,7 +27,7 @@ let allocations (gt : GT.t) : GT.t =
   GT.map_gen_pre aux gt
 
 
-let rec implicit_contraints (gt : GT.t) : GT.t =
+let rec _implicit_contraints (gt : GT.t) : GT.t =
   let infer_size_it (it : IT.t) : (Sym.t * IT.t) option =
     let (IT (it_, _, loc)) = it in
     match it_ with
@@ -51,16 +51,16 @@ let rec implicit_contraints (gt : GT.t) : GT.t =
          let@ psym, it_offset = infer_size_it it_addr in
          let@ it_q = SymMap.find_opt psym !names in
          let loc = Locations.other __LOC__ in
-         let it_size = IT.add_ (it_offset, IT.sizeOf_ sct loc) loc in
-         return
-           (GT.assert_
-              (LC.T (IT.gt_ (it_q, IT.cast_ (IT.bt it_q) it_size loc) loc), gt)
-              loc))
+         let it_size_of = IT.sizeOf_ sct loc in
+         let it_size =
+           IT.add_ (IT.cast_ (IT.bt it_size_of) it_offset loc, it_size_of) loc
+         in
+         return (GT.assert_ (LC.T (IT.gt_ (it_q, it_size) loc), gt) loc))
     | Let (backtracks, x, (GT (Alloc it, _, here') as gt_inner), gt') ->
       (match IT.is_sym it with
        | Some (y, bt) ->
          names := SymMap.add x (IT.sym_ (y, bt, here')) !names;
-         GT.let_ (backtracks, (x, implicit_contraints gt_inner), aux gt') here
+         GT.let_ (backtracks, (x, _implicit_contraints gt_inner), aux gt') here
        | None ->
          let y = Sym.fresh () in
          names := SymMap.add x (IT.sym_ (y, IT.bt it, here')) !names;
@@ -124,7 +124,7 @@ let confirm_distribution (gt : GT.t) : GT.t =
 let distribute_gen (gt : GT.t) : GT.t =
   gt
   |> allocations
-  |> implicit_contraints
+  (* |> implicit_contraints *)
   |> array_length_weights
   |> default_weights
   |> confirm_distribution
