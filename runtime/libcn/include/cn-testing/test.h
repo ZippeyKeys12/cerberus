@@ -20,18 +20,20 @@ void cn_register_test_case(char* suite, char* name, cn_test_case_fn* func);
         if (setjmp(buf_##Suite##_##Name)) {                                    \
             return CN_TEST_FAIL;                                                \
         }                                                                      \
+        set_cn_logging_level(CN_LOGGING_NONE);                                  \
         set_cn_exit_cb(&cn_test_##Suite##_##Name##_fail);                        \
                                                                                \
         for (int i = 0; i < Samples; i++) {\
             CN_TEST_INIT();         \
             struct cn_gen_##Name##_record *res = cn_gen_##Name(); \
             if (cn_gen_backtrack_type() != CN_GEN_BACKTRACK_NONE) { \
-                printf("Failed to generate input for %s::%s\n", #Suite, #Name);\
+                set_cn_logging_level(CN_LOGGING_INFO);\
                 return CN_TEST_GEN_FAIL; \
             }\
             Name(__VA_ARGS__);                                                             \
         }\
                                                                                \
+        set_cn_logging_level(CN_LOGGING_INFO);\
         return CN_TEST_PASS;                                                    \
     }
 
