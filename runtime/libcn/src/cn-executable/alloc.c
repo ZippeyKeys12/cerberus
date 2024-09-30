@@ -41,7 +41,7 @@ static void* curr = buf;
 
 void* alloc_(long nbytes, const char* str, int line) {
     static unsigned long count;
-    printf("Alloc called: %s:%d\n", str, line);
+    // printf("Alloc called: %s:%d\n", str, line);
     void* res = curr;
     if ((char*)curr + nbytes - buf > MEM_SIZE) {
         printf("Out of memory! %lu\n", count);
