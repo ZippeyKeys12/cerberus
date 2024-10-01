@@ -235,7 +235,8 @@ let rec compile_term
                                       ( None,
                                         [ (Locations.other __LOC__, [ Sym.pp_string x ]) ]
                                       )) )))
-                        (List.of_seq (SymSet.to_seq (LC.free_vars prop))) )))
+                        (List.of_seq (SymSet.to_seq (LC.free_vars prop)))
+                    @ [ mk_expr (AilEconst ConstantNull) ] )))
         ]
     in
     let b2, s2, e2 = compile_term sigma name rest in

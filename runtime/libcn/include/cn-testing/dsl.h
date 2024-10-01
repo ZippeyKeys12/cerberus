@@ -62,7 +62,7 @@
 #define CN_GEN_ASSERT(cond, last_var, ...)                                              \
     if (!(cond)) {                                                                      \
         cn_gen_backtrack_assert_failure();                                              \
-        char *toAdd[] = { __VA_ARGS__, NULL};                                           \
+        char *toAdd[] = { __VA_ARGS__ };                                                \
         for (int i = 0; toAdd[i] != NULL; i++) {                                        \
             cn_gen_backtrack_relevant_add(toAdd[i]);                                    \
         }                                                                               \
