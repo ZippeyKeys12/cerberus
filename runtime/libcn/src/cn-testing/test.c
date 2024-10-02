@@ -37,7 +37,7 @@ void cn_register_test_case(char* suite, char* name, cn_test_case_fn* func) {
 }
 
 int cn_test_main(int argc, char* argv[]) {
-    set_cn_logging_level(CN_LOGGING_NONE);
+    set_cn_logging_level(CN_LOGGING_ERROR);
 
     cn_gen_srand(time(NULL));
     uint64_t seed = cn_gen_rand();
