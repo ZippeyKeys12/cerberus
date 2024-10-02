@@ -5,7 +5,7 @@ module GT = GenTerms
 module GD = GenDefinitions
 module SymMap = Map.Make (Sym)
 
-(* let array_size : int = 20 *)
+let array_max_length : int = 20
 
 (* let weight_array_size (_gt : GT.t) : GT.t = failwith __LOC__ *)
 
@@ -79,7 +79,31 @@ let rec _implicit_contraints (gt : GT.t) : GT.t =
   aux gt
 
 
-let array_length_weights (gt : GT.t) : GT.t = gt
+let apply_array_max_length (gt : GT.t) : GT.t =
+  let rec aux (gt : GT.t) : GT.t =
+    let (GT (gt_, _bt, here)) = gt in
+    match gt_ with
+    | Arbitrary | Uniform _ | Alloc _ | Call _ | Return _ -> gt
+    | Pick wgts -> GT.pick_ (List.map_snd aux wgts) here
+    | Asgn ((it_addr, sct), it_val, gt') ->
+      GT.asgn_ ((it_addr, sct), it_val, aux gt') here
+    | Let (backtracks, x, gt_inner, gt') ->
+      GT.let_ (backtracks, (x, aux gt_inner), aux gt') here
+    | Assert (lc, gt') -> GT.assert_ (lc, aux gt') here
+    | ITE (it_if, gt_then, gt_else) -> GT.ite_ (it_if, aux gt_then, aux gt_else) here
+    | Map ((i, i_bt, it_perm), gt') ->
+      let _it_min, it_max = GenAnalysis.get_bounds (i, i_bt) it_perm in
+      let loc = Locations.other __LOC__ in
+      GT.assert_
+        ( LC.T
+            (IT.le_
+               (it_max, IT.num_lit_ (Z.of_int array_max_length) (IT.bt it_max) loc)
+               loc),
+          GT.map_ ((i, i_bt, it_perm), aux gt') here )
+        loc
+  in
+  aux gt
+
 
 let default_weights (gt : GT.t) : GT.t =
   let aux (gt : GT.t) : GT.t =
@@ -122,12 +146,7 @@ let confirm_distribution (gt : GT.t) : GT.t =
 
 
 let distribute_gen (gt : GT.t) : GT.t =
-  gt
-  |> allocations
-  (* |> implicit_contraints *)
-  |> array_length_weights
-  |> default_weights
-  |> confirm_distribution
+  gt |> allocations |> apply_array_max_length |> default_weights |> confirm_distribution
 
 
 let distribute_gen_def ({ name; iargs; oargs; body } : GD.t) : GD.t =
