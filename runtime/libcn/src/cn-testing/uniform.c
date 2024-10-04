@@ -45,10 +45,15 @@ cn_bits_i32* cn_gen_uniform_cn_bits_i32(cn_bits_i64* sz) {
 }
 
 cn_bits_u64* cn_gen_uniform_cn_bits_u64(cn_bits_i64* sz) {
-    assert(sz->val == -1);
+    uint64_t val = cn_gen_rand();
+    if (sz->val != -1) {
+        assert(sz->val > 0);
+        val %= sz->val;
+    }
+    // assert(sz->val == -1);
 
     cn_bits_u64* p = alloc(sizeof(cn_bits_u64));
-    *p = (cn_bits_u64){ .val = cn_gen_rand() };
+    *p = (cn_bits_u64){ .val = val };
     return p;
 }
 
