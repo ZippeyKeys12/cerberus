@@ -1273,7 +1273,7 @@ let rec cn_to_ail_expr_aux_internal
   | ArrayToList (t1, t2, t3) -> failwith "TODO13"
   | Representable (ct, t) -> failwith "TODO14"
   | Good (ct, t) ->
-    dest d ([], [], mk_expr true_const)
+    dest d ([], [], mk_expr (wrap_with_convert_to true_const BT.Bool))
     (* cn_to_ail_expr_aux_internal const_prop pred_name dts globals t d *)
   | Aligned t_and_align -> failwith "TODO16"
   | WrapI (ct, t) -> cn_to_ail_expr_aux_internal const_prop pred_name dts globals t d
@@ -2884,7 +2884,7 @@ let cn_to_ail_logical_constraint_internal
       | _ -> failwith "Incorrect form of forall logical constraint term"
     in
     (match IT.term t with
-     | Good _ -> dest d ([], [], mk_expr true_const)
+     | Good _ -> dest d ([], [], mk_expr (wrap_with_convert_to true_const BT.Bool))
      | _ ->
        (* Assume cond_it is of a particular form *)
        (*
