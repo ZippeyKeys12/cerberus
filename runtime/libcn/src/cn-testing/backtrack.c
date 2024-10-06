@@ -40,7 +40,19 @@ void cn_gen_backtrack_relevant_add(char* varname) {
 
     struct name_list* curr = to_retry;
     while (curr->next != NULL) {
+        /* If variable is already in list, free `new_node` and return */
+        if (strcmp(curr->name, varname) == 0) {
+            free(new_node);
+            return;
+        }
+
         curr = curr->next;
+    }
+
+    /* Check last node */
+    if (strcmp(curr->name, varname) == 0) {
+        free(new_node);
+        return;
     }
 
     curr->next = new_node;
