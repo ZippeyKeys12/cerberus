@@ -22,14 +22,15 @@ module Inline = struct
 
     let transform (gt : GT.t) : GT.t =
       let aux (gt : GT.t) : GT.t =
-        let (GT (gt_, _, _)) = gt in
+        let (GT (gt_, _, here)) = gt in
         match gt_ with
-        | Let (_, x, GT (Return it, _, _), gt') ->
+        | Let (_, x, GT (Return it, _, loc_ret), gt') ->
           let (IT (t_, _, _)) = it in
           (match t_ with
            (* Terms to inline *)
            | Const _ | Sym _ -> GT.subst (IT.make_subst [ (x, it) ]) gt'
-           | _ -> gt)
+           (* Otherwise, at least avoid pointless backtracking *)
+           | _ -> GT.let_ (0, (x, GT.return_ it loc_ret), gt') here)
         | _ -> gt
       in
       GT.map_gen_pre aux gt
