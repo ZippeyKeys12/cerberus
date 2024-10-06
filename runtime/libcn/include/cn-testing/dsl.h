@@ -60,7 +60,7 @@
 // #define CN_GEN_RETURN(val) val
 
 #define CN_GEN_ASSERT(cond, last_var, ...)                                              \
-    if (!(cond)) {                                                                      \
+    if (!convert_from_cn_bool(cond)) {                                                  \
         cn_gen_backtrack_assert_failure();                                              \
         char *toAdd[] = { __VA_ARGS__ };                                                \
         for (int i = 0; toAdd[i] != NULL; i++) {                                        \
