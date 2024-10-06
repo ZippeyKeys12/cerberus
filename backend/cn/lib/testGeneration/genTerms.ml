@@ -16,7 +16,7 @@ type t_ =
   (** Call a defined generator according to a [Sym.t] with arguments [IT.t list] *)
   | Asgn of (IT.t * Sctypes.t) * IT.t * t
   (** Claim ownership and assign a value to a memory location *)
-  | Let of int * Sym.t * t * t (** Monadic bind *)
+  | Let of int * (Sym.t * t) * t (** Monadic bind *)
   | Return of IT.t (** Monadic return *)
   | Assert of LC.t * t (** Assert some [LC.t] are true, backtracking otherwise *)
   | ITE of IT.t * t * t (** If-then-else *)
@@ -66,7 +66,7 @@ let asgn_ ((it_addr, ct), it_val, gt') loc =
 
 
 let let_ ((retries, (x, gt1), gt2) : int * (Sym.t * t) * t) (loc : Locations.t) : t =
-  GT (Let (retries, x, gt1, gt2), basetype gt2, loc)
+  GT (Let (retries, (x, gt1), gt2), basetype gt2, loc)
 
 
 let return_ (it : IT.t) (loc : Locations.t) : t = GT (Return it, IT.bt it, loc)
@@ -191,7 +191,7 @@ let rec pp (gt : t) : Pp.document =
     ^^ semi
     ^^ break 1
     ^^ pp gt'
-  | GT (Let (tries, x, gt1, gt2), _bt, _here) ->
+  | GT (Let (tries, (x, gt1), gt2), _bt, _here) ->
     string "let"
     ^^ (if tries <> 0 then parens (int tries) else empty)
     ^^ (if is_return gt1 then empty else star)
@@ -240,9 +240,9 @@ let rec subst_ (su : [ `Term of IT.t | `Rename of Sym.t ] Subst.t) (gt_ : t_) : 
   | Call (fsym, xits) -> Call (fsym, List.map_snd (IT.subst su) xits)
   | Asgn ((it_addr, gbt), it_val, g') ->
     Asgn ((IT.subst su it_addr, gbt), IT.subst su it_val, subst su g')
-  | Let (tries, x, gt1, gt2) ->
+  | Let (tries, (x, gt1), gt2) ->
     let x, gt2 = suitably_alpha_rename_gen su.relevant x gt2 in
-    Let (tries, x, subst su gt1, subst su gt2)
+    Let (tries, (x, subst su gt1), subst su gt2)
   | Return it -> Return (IT.subst su it)
   | Assert (lc, gt') -> Assert (LC.subst su lc, subst su gt')
   | ITE (it, gt_then, gt_else) -> ITE (IT.subst su it, subst su gt_then, subst su gt_else)
@@ -278,7 +278,7 @@ let rec free_vars_bts_ (gt_ : t_) : BT.t SymMap.t =
   | Asgn ((it_addr, _), it_val, gt') ->
     free_vars_bts_list
       [ return_ it_addr Locations.unknown; return_ it_val Locations.unknown; gt' ]
-  | Let (_, x, gt1, gt2) ->
+  | Let (_, (x, gt1), gt2) ->
     SymMap.union
       (fun _ bt1 bt2 ->
         assert (BT.equal bt1 bt2);
@@ -328,7 +328,7 @@ let rec map_gen_pre (f : t -> t) (g : t) : t =
     | Alloc it -> Alloc it
     | Call (fsym, its) -> Call (fsym, its)
     | Asgn ((it_addr, gt), it_val, gt') -> Asgn ((it_addr, gt), it_val, map_gen_pre f gt')
-    | Let (tries, x, gt, gt') -> Let (tries, x, map_gen_pre f gt, map_gen_pre f gt')
+    | Let (tries, (x, gt), gt') -> Let (tries, (x, map_gen_pre f gt), map_gen_pre f gt')
     | Return it -> Return it
     | Assert (lcs, gt') -> Assert (lcs, map_gen_pre f gt')
     | ITE (it, gt_then, gt_else) -> ITE (it, map_gen_pre f gt_then, map_gen_pre f gt_else)
@@ -347,7 +347,7 @@ let rec map_gen_post (f : t -> t) (g : t) : t =
     | Alloc it -> Alloc it
     | Call (fsym, its) -> Call (fsym, its)
     | Asgn ((it_addr, gt), it_val, gt') -> Asgn ((it_addr, gt), it_val, map_gen_post f gt')
-    | Let (tries, x, gt, gt') -> Let (tries, x, map_gen_post f gt, map_gen_post f gt')
+    | Let (tries, (x, gt), gt') -> Let (tries, (x, map_gen_post f gt), map_gen_post f gt')
     | Return it -> Return it
     | Assert (lcs, gt') -> Assert (lcs, map_gen_post f gt')
     | ITE (it, gt_then, gt_else) ->

@@ -24,7 +24,7 @@ module Inline = struct
       let aux (gt : GT.t) : GT.t =
         let (GT (gt_, _, here)) = gt in
         match gt_ with
-        | Let (_, x, GT (Return it, _, loc_ret), gt') ->
+        | Let (_, (x, GT (Return it, _, loc_ret)), gt') ->
           let (IT (t_, _, _)) = it in
           (match t_ with
            (* Terms to inline *)
@@ -109,7 +109,7 @@ module Inline = struct
           in
           let gt', only_ret' = transform_aux gt' in
           (GT.asgn_ ((it_addr, sct), it_val, gt') loc, union only_ret only_ret')
-        | Let (backtracks, x, gt_inner, gt') ->
+        | Let (backtracks, (x, gt_inner), gt') ->
           let gt', only_ret = transform_aux gt' in
           let only_ret = SymMap.remove x only_ret in
           if Option.equal Bool.equal (SymMap.find_opt x only_ret) (Some true) then
@@ -249,8 +249,8 @@ module RemoveUnused = struct
     let aux (gt : GT.t) : GT.t =
       let (GT (gt_, _, _)) = gt in
       match gt_ with
-      | Let (_, x, gt1, gt2) when GA.is_pure gt1 && not (SymSet.mem x (GT.free_vars gt2))
-        ->
+      | Let (_, (x, gt1), gt2)
+        when GA.is_pure gt1 && not (SymSet.mem x (GT.free_vars gt2)) ->
         gt2
       | _ -> gt
     in

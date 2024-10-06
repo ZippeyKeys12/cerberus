@@ -13,7 +13,7 @@ let rec is_pure (gt : GT.t) : bool =
   | Alloc _ -> false
   | Call _ -> false (* Could be less conservative... *)
   | Asgn _ -> false
-  | Let (_, _, gt1, gt2) -> is_pure gt1 && is_pure gt2
+  | Let (_, (_, gt1), gt2) -> is_pure gt1 && is_pure gt2
   | Return _ -> true
   | Assert _ -> false
   | ITE (_, gt_then, gt_else) -> is_pure gt_then && is_pure gt_else
@@ -55,7 +55,7 @@ let get_single_uses ?(pure : bool = false) (gt : GT.t) : SymSet.t =
       iargs |> List.map snd |> List.map aux_it |> List.fold_left union SymMap.empty
     | Asgn ((it_addr, _), it_val, gt') ->
       aux gt' :: List.map aux_it [ it_addr; it_val ] |> List.fold_left union SymMap.empty
-    | Let (_, x, gt1, gt2) -> SymMap.remove x (union (aux gt1) (aux gt2))
+    | Let (_, (x, gt1), gt2) -> SymMap.remove x (union (aux gt1) (aux gt2))
     | Assert (lc, gt') -> union (aux gt') (aux_lc lc)
     | ITE (it_if, gt_then, gt_else) ->
       aux_it it_if :: List.map aux [ gt_then; gt_else ]

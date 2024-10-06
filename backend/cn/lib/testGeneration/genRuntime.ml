@@ -273,7 +273,7 @@ let rec elaborate_gt (inputs : SymSet.t) (vars : Sym.t list) (gt : GT.t) : term 
         last_var = (if SymSet.mem pointer inputs then bennet else pointer);
         rest = elaborate_gt inputs vars rest
       }
-  | Let (backtracks, x, gt1, gt2) ->
+  | Let (backtracks, (x, gt1), gt2) ->
     Let
       { backtracks;
         x;

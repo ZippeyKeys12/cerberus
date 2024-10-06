@@ -113,7 +113,7 @@ let replace_struct_memberof_gt
 let destruct_struct_arbitrary (prog5 : unit Mucore.mu_file) (gt : GT.t) : GT.t =
   let aux (gt : GT.t) : GT.t =
     match gt with
-    | GT (Let (backtracks, x, GT (Arbitrary, Struct tag, loc_arb), gt'), _, _) ->
+    | GT (Let (backtracks, (x, GT (Arbitrary, Struct tag, loc_arb)), gt'), _, _) ->
       (match Pmap.find tag prog5.mu_tagDefs with
        | M_StructDef pieces ->
          (* Generate fresh vars for each member *)

@@ -56,7 +56,7 @@ let rec _implicit_contraints (gt : GT.t) : GT.t =
            IT.add_ (IT.cast_ (IT.bt it_size_of) it_offset loc, it_size_of) loc
          in
          return (GT.assert_ (LC.T (IT.gt_ (it_q, it_size) loc), gt) loc))
-    | Let (backtracks, x, (GT (Alloc it, _, here') as gt_inner), gt') ->
+    | Let (backtracks, (x, (GT (Alloc it, _, here') as gt_inner)), gt') ->
       (match IT.is_sym it with
        | Some (y, bt) ->
          names := SymMap.add x (IT.sym_ (y, bt, here')) !names;
@@ -70,7 +70,7 @@ let rec _implicit_contraints (gt : GT.t) : GT.t =
              (y, GT.arbitrary_ (IT.bt it) loc),
              GT.let_ (0, (x, GT.alloc_ (IT.sym_ (y, IT.bt it, loc)) loc), aux gt') here )
            loc)
-    | Let (backtracks, x, gt_inner, gt') ->
+    | Let (backtracks, (x, gt_inner), gt') ->
       GT.let_ (backtracks, (x, aux gt_inner), aux gt') here
     | Assert (lc, gt') -> GT.assert_ (lc, aux gt') here
     | ITE (it_if, gt_then, gt_else) -> GT.ite_ (it_if, aux gt_then, aux gt_else) here
@@ -87,7 +87,7 @@ let apply_array_max_length (gt : GT.t) : GT.t =
     | Pick wgts -> GT.pick_ (List.map_snd aux wgts) here
     | Asgn ((it_addr, sct), it_val, gt') ->
       GT.asgn_ ((it_addr, sct), it_val, aux gt') here
-    | Let (backtracks, x, gt_inner, gt') ->
+    | Let (backtracks, (x, gt_inner), gt') ->
       GT.let_ (backtracks, (x, aux gt_inner), aux gt') here
     | Assert (lc, gt') -> GT.assert_ (lc, aux gt') here
     | ITE (it_if, gt_then, gt_else) -> GT.ite_ (it_if, aux gt_then, aux gt_else) here
@@ -130,7 +130,7 @@ let confirm_distribution (gt : GT.t) : GT.t =
     | Uniform _ | Alloc _ | Call _ | Return _ -> []
     | Pick wgts -> wgts |> List.map snd |> List.map aux |> List.flatten
     | Asgn (_, _, gt') | Assert (_, gt') | Map ((_, _, _), gt') -> aux gt'
-    | Let (_, _, gt1, gt2) | ITE (_, gt1, gt2) ->
+    | Let (_, (_, gt1), gt2) | ITE (_, gt1, gt2) ->
       [ gt1; gt2 ] |> List.map aux |> List.flatten
   in
   let failures = aux gt in
