@@ -35,13 +35,14 @@
 #define CN_GEN_LET_BODY(ty, var, gen)                                                   \
         ty* var = gen;
 
-#define CN_GEN_LET_FROM(...) {                                                          \
-        char* from[] = { __VA_ARGS__, NULL };
+#define CN_GEN_LET_FROM(...)                                                            \
+        {                                                                               \
+            char* from[] = { __VA_ARGS__, NULL };
 
 #define CN_GEN_LET_TO(...)                                                              \
-        char* to[] = { __VA_ARGS__, NULL };                                             \
-        cn_gen_backtrack_relevant_remap_many(from, to);                                 \
-    }
+            char* to[] = { __VA_ARGS__, NULL };                                         \
+            cn_gen_backtrack_relevant_remap_many(from, to);                             \
+        }
 
 #define CN_GEN_LET_END(backtracks, var, last_var)                                       \
         if (cn_gen_backtrack_type() != CN_GEN_BACKTRACK_NONE) {                         \

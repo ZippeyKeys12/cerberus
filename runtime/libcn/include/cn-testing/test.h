@@ -17,7 +17,6 @@ void cn_register_test_case(char* suite, char* name, cn_test_case_fn* func);
     }                                                                                   \
                                                                                         \
     enum cn_test_result cn_test_##Suite##_##Name () {                                   \
-        cn_gen_rand_checkpoint checkpoint = cn_gen_rand_save();                         \
         if (setjmp(buf_##Suite##_##Name)) {                                             \
             return CN_TEST_FAIL;                                                        \
         }                                                                               \
