@@ -76,19 +76,19 @@
 #define CN_GEN_MAP_BEGIN(map, i, i_ty, min, max)                                        \
     cn_map* map = map_create();                                                         \
     {                                                                                   \
-        i_ty* i = min;                                                                  \
-        while (convert_from_cn_bool(i_ty##_le(i, max))) {
+        i_ty* i = max;                                                                  \
+        while (convert_from_cn_bool(i_ty##_ge(i, min))) {
 
 #define CN_GEN_MAP_BODY(perm)                                                           \
             if (convert_from_cn_bool(perm)) {
 
-#define CN_GEN_MAP_END(map, i, i_ty, max, val)                                          \
+#define CN_GEN_MAP_END(map, i, i_ty, min, val)                                          \
                 cn_map_set(map, cast_##i_ty##_to_cn_integer(i), val);                   \
             }                                                                           \
-            if (convert_from_cn_bool(i_ty##_equality(i, max))) {                        \
+            if (convert_from_cn_bool(i_ty##_equality(i, min))) {                        \
                 break;                                                                  \
             }                                                                           \
-            i_ty##_increment(i);                                                        \
+            i_ty##_sub(i, convert_to_##i_ty(1));                                        \
         }                                                                               \
     }
 

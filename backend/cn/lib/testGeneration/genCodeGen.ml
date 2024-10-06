@@ -318,7 +318,7 @@ let rec compile_term
               (mk_expr
                  (AilEcall
                     ( mk_expr (AilEident (Sym.fresh_named "CN_GEN_MAP_END")),
-                      e_args @ [ e_max; e_val ] )))
+                      e_args @ [ e_min; e_val ] )))
           ])
     in
     ( [ b_map; b_i ] @ b_min @ b_perm @ b_val,
