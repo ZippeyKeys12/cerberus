@@ -61,6 +61,38 @@ type term =
 
 let is_return (tm : term) : bool = match tm with Return _ -> true | _ -> false
 
+let rec free_vars_term (tm : term) : SymSet.t =
+  match tm with
+  | Uniform _ -> SymSet.empty
+  | Pick { choices } -> free_vars_term_list (List.map snd choices)
+  | Alloc { bytes } -> IT.free_vars bytes
+  | Call { fsym = _; iargs } -> SymSet.of_list (List.map snd iargs)
+  | Asgn { pointer; offset; sct = _; value; last_var = _; rest } ->
+    List.fold_left
+      SymSet.union
+      SymSet.empty
+      [ SymSet.singleton pointer;
+        IT.free_vars_list [ offset; value ];
+        free_vars_term rest
+      ]
+  | Let { backtracks = _; x; x_bt = _; value; last_var = _; rest } ->
+    SymSet.union (free_vars_term value) (SymSet.remove x (free_vars_term rest))
+  | Return { value } -> IT.free_vars value
+  | Assert { prop; last_var = _; rest } ->
+    SymSet.union (LC.free_vars prop) (free_vars_term rest)
+  | ITE { bt = _; cond; t; f } ->
+    SymSet.union (IT.free_vars cond) (free_vars_term_list [ t; f ])
+  | Map { i; bt = _; min; max; perm; inner } ->
+    SymSet.remove
+      i
+      (SymSet.union (IT.free_vars_list [ min; max; perm ]) (free_vars_term inner))
+
+
+and free_vars_term_list : term list -> SymSet.t =
+  fun xs ->
+  List.fold_left (fun ss t -> SymSet.union ss (free_vars_term t)) SymSet.empty xs
+
+
 let rec pp_term (tm : term) : Pp.document =
   let open Pp in
   match tm with

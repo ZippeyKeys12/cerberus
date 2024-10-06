@@ -5,6 +5,8 @@ module IT = IndexTerms
 module LC = LogicalConstraints
 module GD = GenDefinitions
 
+module SymSet : Set.S with type elt = Sym.t
+
 type term =
   | Uniform of
       { bt : BT.t;
@@ -53,6 +55,10 @@ type term =
         inner : term
       }
 [@@deriving eq, ord]
+
+val free_vars_term : term -> SymSet.t
+
+val free_vars_term_list : term list -> SymSet.t
 
 val pp_term : term -> Pp.document
 

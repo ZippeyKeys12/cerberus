@@ -206,7 +206,20 @@ let rec compile_term
                                (IConstant (Z.of_int backtracks, Decimal, None)));
                           AilEident x;
                           AilEident last_var
-                        ] )))
+                        ]
+                      @ List.map
+                          (fun x ->
+                            mk_expr
+                              (AilEcast
+                                 ( C.no_qualifiers,
+                                   C.pointer_to_char,
+                                   mk_expr
+                                     (AilEstr
+                                        ( None,
+                                          [ (Locations.other __LOC__, [ Sym.pp_string x ])
+                                          ] )) )))
+                          (List.of_seq (GR.SymSet.to_seq (GR.free_vars_term value)))
+                      @ [ mk_expr (AilEconst ConstantNull) ] )))
           ])
     in
     let b4, s4, e4 = compile_term sigma name rest in

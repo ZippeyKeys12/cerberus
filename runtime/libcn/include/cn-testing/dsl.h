@@ -44,15 +44,17 @@
             cn_gen_backtrack_relevant_remap_many(from, to);                             \
         }
 
-#define CN_GEN_LET_END(backtracks, var, last_var)                                       \
+#define CN_GEN_LET_END(backtracks, var, last_var, ...)                                  \
         if (cn_gen_backtrack_type() != CN_GEN_BACKTRACK_NONE) {                         \
         cn_label_##var##_backtrack:                                                     \
-            if (var##_backtracks > 0                                                    \
-                    && cn_gen_backtrack_relevant_contains((char*)#var)) {               \
-                if (cn_gen_backtrack_type() != CN_GEN_BACKTRACK_ALLOC) {                \
-                    var##_backtracks--;                                                 \
+            if (cn_gen_backtrack_relevant_contains((char*)#var)) {                      \
+                char *toAdd[] = { __VA_ARGS__ };                                        \
+                cn_gen_backtrack_relevant_add_many(toAdd);                              \
+                if (var##_backtracks <= 0) {                                            \
+                    goto cn_label_##last_var##_backtrack;                               \
                 }                                                                       \
                 if (cn_gen_backtrack_type() == CN_GEN_BACKTRACK_ASSERT) {               \
+                    var##_backtracks--;                                                 \
                     cn_gen_backtrack_reset();                                           \
                 }                                                                       \
                 goto cn_label_##var##_gen;                                              \
