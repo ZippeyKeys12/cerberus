@@ -47,8 +47,8 @@ let rec replace_struct_memberof_it
        | Some (y, _y_bt) when Sym.equal y struct_sym ->
          IT.Sym (List.assoc Id.equal x dict)
        | _ -> IT.StructMember (repl it', x))
-    | StructUpdate ((_it_struct, _x), _it_val) ->
-      failwith __LOC__ (* IT.StructUpdate ((repl it_struct, x), repl it_val) *)
+    | StructUpdate ((it_struct, x), it_val) ->
+      IT.StructUpdate ((repl it_struct, x), repl it_val)
     | Record xits -> IT.Record (List.map_snd repl xits)
     | RecordMember (it', x) -> IT.RecordMember (repl it', x)
     | RecordUpdate ((it_record, x), it_val) ->

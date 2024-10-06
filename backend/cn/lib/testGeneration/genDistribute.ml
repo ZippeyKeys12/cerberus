@@ -145,8 +145,34 @@ let confirm_distribution (gt : GT.t) : GT.t =
            ^^ brackets (separate_map (comma ^^ break 1) Locations.pp failures)))
 
 
+let pull_out_inner_generators (gt : GT.t) : GT.t =
+  let aux (gt : GT.t) : GT.t =
+    match gt with
+    | GT (Let (x_backtracks, (x, gt1), gt2), _, loc_let) ->
+      (match gt1 with
+       | GT (Asgn ((it_addr, sct), it_val, gt3), _, loc_asgn) ->
+         GT.asgn_
+           ((it_addr, sct), it_val, GT.let_ (x_backtracks, (x, gt3), gt2) loc_let)
+           loc_asgn
+       | GT (Let (y_backtracks', (y, gt3), gt4), _, loc_let') ->
+         GT.let_
+           (y_backtracks', (y, gt3), GT.let_ (x_backtracks, (x, gt4), gt2) loc_let)
+           loc_let'
+       | GT (Assert (lc, gt3), _, loc_assert) ->
+         GT.assert_ (lc, GT.let_ (x_backtracks, (x, gt3), gt2) loc_let) loc_assert
+       | _ -> gt)
+    | _ -> gt
+  in
+  GT.map_gen_pre aux gt
+
+
 let distribute_gen (gt : GT.t) : GT.t =
-  gt |> allocations |> apply_array_max_length |> default_weights |> confirm_distribution
+  gt
+  |> allocations
+  |> apply_array_max_length
+  |> default_weights
+  |> confirm_distribution
+  |> pull_out_inner_generators
 
 
 let distribute_gen_def ({ name; iargs; oargs; body } : GD.t) : GD.t =
