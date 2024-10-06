@@ -63,9 +63,7 @@
     if (!convert_from_cn_bool(cond)) {                                                  \
         cn_gen_backtrack_assert_failure();                                              \
         char *toAdd[] = { __VA_ARGS__ };                                                \
-        for (int i = 0; toAdd[i] != NULL; i++) {                                        \
-            cn_gen_backtrack_relevant_add(toAdd[i]);                                    \
-        }                                                                               \
+        cn_gen_backtrack_relevant_add_many(toAdd);                                      \
         goto cn_label_##last_var##_backtrack;                                           \
     }
 

@@ -17,6 +17,8 @@ void cn_gen_backtrack_assert_failure(void);
 
 void cn_gen_backtrack_relevant_add(char* varname);
 
+void cn_gen_backtrack_relevant_add_many(char* toAdd[]);
+
 int cn_gen_backtrack_relevant_contains(char* varname);
 
 /**

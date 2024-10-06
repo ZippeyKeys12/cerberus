@@ -46,6 +46,12 @@ void cn_gen_backtrack_relevant_add(char* varname) {
     curr->next = new_node;
 }
 
+void cn_gen_backtrack_relevant_add_many(char* toAdd[]) {
+    for (int i = 0; toAdd[i] != NULL; i++) {
+        cn_gen_backtrack_relevant_add(toAdd[i]);
+    }
+}
+
 int cn_gen_backtrack_relevant_contains(char* varname) {
     struct name_list* curr = to_retry;
     while (curr != NULL) {
