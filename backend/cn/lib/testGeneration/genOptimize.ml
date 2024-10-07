@@ -150,8 +150,256 @@ module Inline = struct
   let passes = Returns.pass :: SingleUse.passes
 end
 
-(** This pass ... *)
-module Reordering = struct end
+(** This pass looks at the relationships of the
+    variables and reorders their generation *)
+module Reordering = struct
+  let name = "reordering"
+
+  module Stmt = struct
+    type t =
+      | Asgn of (IT.t * Sctypes.t) * IT.t
+      | Let of (int * (Sym.t * GT.t))
+      | Assert of LC.t
+    [@@deriving eq, ord]
+
+    let hash = Hashtbl.hash
+  end
+
+  let stmts_of_gt (gt : GT.t) : Stmt.t list * GT.t =
+    let open Stmt in
+    let rec aux (gt : GT.t) : Stmt.t list * GT.t =
+      let (GT (gt_, _, _)) = gt in
+      match gt_ with
+      | Arbitrary | Uniform _ | Pick _ | Alloc _ | Call _ | Return _ | ITE _ | Map _ ->
+        ([], gt)
+      | Asgn ((it_addr, sct), it_val, gt_rest) ->
+        let stmts, gt_last = aux gt_rest in
+        (Asgn ((it_addr, sct), it_val) :: stmts, gt_last)
+      | Let (backtracks, (x, gt'), gt_rest) ->
+        let stmts, gt_last = aux gt_rest in
+        (Let (backtracks, (x, gt')) :: stmts, gt_last)
+      | Assert (lc, gt_rest) ->
+        let stmts, gt_last = aux gt_rest in
+        (Assert lc :: stmts, gt_last)
+    in
+    aux gt
+
+
+  let gt_of_stmts (stmts : Stmt.t list) (gt_end : GT.t) : GT.t =
+    List.fold_right
+      (fun (stmt : Stmt.t) gt_rest ->
+        let loc = Locations.other __LOC__ in
+        match stmt with
+        | Asgn ((it_addr, sct), it_val) -> GT.asgn_ ((it_addr, sct), it_val, gt_rest) loc
+        | Let (backtracks, (x, gt')) -> GT.let_ (backtracks, (x, gt'), gt_rest) loc
+        | Assert lc -> GT.assert_ (lc, gt_rest) loc)
+      stmts
+      gt_end
+
+
+  module SymGraph = Graph.Persistent.Digraph.Concrete (Sym)
+
+  module Dot = Graph.Graphviz.Dot (struct
+      include SymGraph
+
+      let edge_attributes _ = []
+
+      let default_edge_attributes _ = []
+
+      let get_subgraph _ = None
+
+      let vertex_name = Sym.pp_string
+
+      let vertex_attributes _ = []
+
+      let default_vertex_attributes _ = []
+
+      let graph_attributes _ = []
+    end)
+
+  let get_pure_vars (stmts : Stmt.t list) : SymSet.t =
+    stmts
+    |> List.filter_map (fun (stmt : Stmt.t) ->
+      match stmt with Let (_, (x, gt)) when GA.is_pure gt -> Some x | _ -> None)
+    |> SymSet.of_list
+
+
+  let get_variable_ordering (iargs : SymSet.t) (stmts : Stmt.t list) : SymGraph.t =
+    let pure_vars = SymSet.inter (get_pure_vars stmts) in
+    (* The hardest ordering constraint, so we do it first *)
+    let rec order_lets (stmts : Stmt.t list) : SymGraph.t * Stmt.t list =
+      match stmts with
+      | Let (_, (x, gt')) :: stmts' ->
+        let g, stmts' = order_lets stmts' in
+        let inputs = GT.free_vars gt' in
+        (SymSet.fold (fun inp g -> SymGraph.add_edge_e g (inp, x)) inputs g, stmts')
+      | stmt :: stmts' ->
+        let g, stmts' = order_lets stmts' in
+        (g, stmt :: stmts')
+      | [] -> (SymGraph.empty, [])
+    in
+    (* Purely heuristic *)
+    let rec order_rest ((g, stmts) : SymGraph.t * Stmt.t list) : SymGraph.t =
+      match stmts with
+      | Asgn ((it_addr, _sct), it_val) :: stmts' ->
+        let g' = order_rest (g, stmts') in
+        let pointer_sym, it_offset =
+          let (IT (it_addr_, _, loc)) = it_addr in
+          match it_addr_ with
+          | ArrayShift { base = IT (Sym p_sym, _, _); ct; index = it_offset } ->
+            (p_sym, IT.mul_ (IT.sizeOf_ ct loc, IT.cast_ Memory.size_bt it_offset loc) loc)
+          | Binop (Add, IT (Sym p_sym, _, _), it_offset) -> (p_sym, it_offset)
+          | Sym p_sym -> (p_sym, IT.num_lit_ Z.zero Memory.size_bt loc)
+          | _ ->
+            failwith
+              ("unsupported format for address: "
+               ^ CF.Pp_utils.to_plain_string (IT.pp it_addr))
+        in
+        (* We prefer to have correct values and
+           only backtrack on the allocation, so
+           we want the address later *)
+        if SymSet.mem pointer_sym iargs then
+          g'
+        else (
+          let before = SymSet.union (IT.free_vars it_offset) (IT.free_vars it_val) in
+          SymSet.fold (fun x g'' -> SymGraph.add_edge_e g'' (x, pointer_sym)) before g')
+      | Assert lc :: stmts' ->
+        let g' = order_rest (g, stmts') in
+        (match LC.is_equality lc with
+         | Some ((it_x, it_y), true) ->
+           (match (IT.is_sym it_x, IT.is_sym it_y) with
+            | Some (x_sym, _x_bt), None | None, Some (x_sym, _x_bt) ->
+              if SymSet.mem x_sym iargs then
+                g'
+              else (
+                let before = IT.free_vars it_y in
+                SymSet.fold (fun z g'' -> SymGraph.add_edge_e g'' (z, x_sym)) before g')
+            | _, _ -> g')
+         | _ ->
+           let vars = LC.free_vars lc in
+           let before = pure_vars vars in
+           if SymSet.is_empty before then
+             g'
+           else (
+             let after = SymSet.diff vars before in
+             SymSet.fold
+               (fun x ->
+                 SymSet.fold (fun y g''' -> SymGraph.add_edge_e g''' (x, y)) after)
+               before
+               g'))
+      | Let _ :: _ -> failwith ("unreachable @ " ^ __LOC__)
+      | [] -> g
+    in
+    let remove_loops (g : SymGraph.t) : SymGraph.t =
+      let g' =
+        SymGraph.fold_vertex (fun x g'' -> SymGraph.add_vertex g'' x) g SymGraph.empty
+      in
+      SymGraph.fold_edges
+        (fun x1 x2 g'' -> if Sym.equal x1 x2 then g'' else SymGraph.add_edge g'' x1 x2)
+        g
+        g'
+    in
+    stmts |> order_lets |> order_rest |> remove_loops
+
+
+  (** FIXME: Make fewer choices and build a graph to decide the ordering? *)
+  let get_statement_ordering (iargs : SymSet.t) (stmts : Stmt.t list) : Stmt.t list =
+    let rec loop
+      ((vars, res, g, stmts) : SymSet.t * Stmt.t list * SymGraph.t * Stmt.t list)
+      : SymSet.t * Stmt.t list
+      =
+      if List.is_empty stmts then
+        (vars, res)
+      else (
+        let g = SymSet.fold (fun x g' -> SymGraph.remove_vertex g' x) vars g in
+        let res', stmts =
+          List.partition
+            (fun (stmt : Stmt.t) ->
+              match stmt with
+              | Asgn ((it_addr, _sct), it_val) ->
+                SymSet.subset (IT.free_vars_list [ it_addr; it_val ]) vars
+              | Assert lc -> SymSet.subset (LC.free_vars lc) vars
+              | _ -> false)
+            stmts
+        in
+        let res = res @ res' in
+        print_string "ghi";
+        print_newline ();
+        print_int (List.length res);
+        print_newline ();
+        let var =
+          SymGraph.fold_vertex
+            (fun x var ->
+              if Option.is_none var && SymGraph.in_degree g x = 0 then Some x else var)
+            g
+            None
+        in
+        let vars, res, stmts =
+          match var with
+          (* If only let's without dependencies left... *)
+          | None -> (vars, res @ stmts, [])
+          | Some var ->
+            let res', stmts =
+              List.partition
+                (fun (stmt : Stmt.t) ->
+                  match stmt with
+                  | Let (_backtracks, (x, _gt)) -> Sym.equal x var
+                  | _ -> false)
+                stmts
+            in
+            (SymSet.add var vars, res @ res', stmts)
+        in
+        loop (vars, res, g, stmts))
+    in
+    print_string "abc";
+    print_newline ();
+    let g = get_variable_ordering iargs stmts in
+    print_string
+      (Pp.plain
+         (* Pp.debug
+            1
+            (lazy *)
+         (let buf = Buffer.create 50 in
+          Dot.fprint_graph (Format.formatter_of_buffer buf) g;
+          Pp.string (Buffer.contents buf))
+         (* ); *));
+    print_newline ();
+    print_string "def";
+    print_newline ();
+    let _, res = loop (iargs, [], g, stmts) in
+    res
+
+
+  let reorder (iargs : SymSet.t) (gt : GT.t) : GT.t =
+    let stmts, gt_last = stmts_of_gt gt in
+    let stmts = get_statement_ordering iargs stmts in
+    gt_of_stmts stmts gt_last
+
+
+  let transform (gd : GD.t) : GD.t =
+    let rec aux (iargs : SymSet.t) (gt : GT.t) : GT.t =
+      let rec loop (gt : GT.t) : GT.t =
+        let (GT (gt_, _bt, loc)) = gt in
+        match gt_ with
+        | Arbitrary | Uniform _ | Alloc _ | Call _ | Return _ -> gt
+        | Pick wgts -> GT.pick_ (List.map_snd (aux iargs) wgts) loc
+        | Asgn ((it_addr, sct), it_val, gt_rest) ->
+          GT.asgn_ ((it_addr, sct), it_val, loop gt_rest) loc
+        | Let (backtracks, (x, gt'), gt_rest) ->
+          GT.let_ (backtracks, (x, (aux iargs) gt'), loop gt_rest) loc
+        | Assert (lc, gt_rest) -> GT.assert_ (lc, loop gt_rest) loc
+        | ITE (it_if, gt_then, gt_else) ->
+          GT.ite_ (it_if, aux iargs gt_then, aux iargs gt_else) loc
+        | Map ((i_sym, i_bt, it_perm), gt_inner) ->
+          GT.map_ ((i_sym, i_bt, it_perm), aux (SymSet.add i_sym iargs) gt_inner) loc
+      in
+      print_string (Pp.plain (GT.pp gt));
+      print_newline ();
+      gt |> reorder iargs |> loop
+    in
+    let iargs = gd.iargs |> List.map fst |> SymSet.of_list in
+    { gd with body = Some (aux iargs (Option.get gd.body)) }
+end
 
 (** This pass ... *)
 module Specialization = struct end
@@ -281,7 +529,8 @@ let optimize_gen (passes : StringSet.t) (gt : GT.t) : GT.t =
 
 
 let optimize_gen_def (passes : StringSet.t) ({ name; iargs; oargs; body } : GD.t) : GD.t =
-  { name; iargs; oargs; body = Option.map (optimize_gen passes) body }
+  Reordering.transform
+    { name; iargs; oargs; body = Option.map (optimize_gen passes) body }
 
 
 let optimize ?(passes : StringSet.t option = None) (ctx : GD.context) : GD.context =
