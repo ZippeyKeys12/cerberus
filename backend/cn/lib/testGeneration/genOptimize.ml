@@ -458,12 +458,20 @@ end
 module TermSimplification = struct
   let name = "simplify_term"
 
-  let transform (gt : GT.t) : GT.t =
+  let transform (prog5 : unit Mucore.mu_file) (gt : GT.t) : GT.t =
+    let globals =
+      { Global.empty with
+        logical_functions = SymMap.of_seq (List.to_seq prog5.mu_logical_predicates)
+      }
+    in
     let simp_it (it : IT.t) : IT.t =
-      Simplify.IndexTerms.simp (Simplify.default Global.empty) it
+      Simplify.IndexTerms.simp ~inline_functions:true (Simplify.default globals) it
     in
     let simp_lc (lc : LC.t) : LC.t =
-      Simplify.LogicalConstraints.simp (Simplify.default Global.empty) lc
+      Simplify.LogicalConstraints.simp
+        ~inline_functions:true
+        (Simplify.default globals)
+        lc
     in
     let aux (gt : GT.t) : GT.t =
       let (GT (gt_, bt, loc)) = gt in
@@ -480,7 +488,7 @@ module TermSimplification = struct
     GT.map_gen_pre aux gt
 
 
-  let pass = { name; transform }
+  let pass (prog5 : unit Mucore.mu_file) = { name; transform = transform prog5 }
 end
 
 (** This pass ... *)
@@ -508,11 +516,13 @@ module RemoveUnused = struct
   let passes = [ { name; transform } ]
 end
 
-let all_passes = Inline.passes @ RemoveUnused.passes @ [ TermSimplification.pass ]
+let all_passes (prog5 : unit Mucore.mu_file) =
+  Inline.passes @ RemoveUnused.passes @ [ TermSimplification.pass prog5 ]
 
-let optimize_gen (passes : StringSet.t) (gt : GT.t) : GT.t =
+
+let optimize_gen (prog5 : unit Mucore.mu_file) (passes : StringSet.t) (gt : GT.t) : GT.t =
   let passes =
-    all_passes
+    all_passes prog5
     |> List.filter_map (fun { name; transform } ->
       if StringSet.mem name passes then Some transform else None)
   in
@@ -528,12 +538,22 @@ let optimize_gen (passes : StringSet.t) (gt : GT.t) : GT.t =
   aux gt 5
 
 
-let optimize_gen_def (passes : StringSet.t) ({ name; iargs; oargs; body } : GD.t) : GD.t =
+let optimize_gen_def
+  (prog5 : unit Mucore.mu_file)
+  (passes : StringSet.t)
+  ({ name; iargs; oargs; body } : GD.t)
+  : GD.t
+  =
   Reordering.transform
-    { name; iargs; oargs; body = Option.map (optimize_gen passes) body }
+    { name; iargs; oargs; body = Option.map (optimize_gen prog5 passes) body }
 
 
-let optimize ?(passes : StringSet.t option = None) (ctx : GD.context) : GD.context =
-  let default = all_passes |> List.map (fun p -> p.name) |> StringSet.of_list in
+let optimize
+  (prog5 : unit Mucore.mu_file)
+  ?(passes : StringSet.t option = None)
+  (ctx : GD.context)
+  : GD.context
+  =
+  let default = all_passes prog5 |> List.map (fun p -> p.name) |> StringSet.of_list in
   let passes = Option.value ~default passes in
-  List.map_snd (List.map_snd (optimize_gen_def passes)) ctx
+  List.map_snd (List.map_snd (optimize_gen_def prog5 passes)) ctx
