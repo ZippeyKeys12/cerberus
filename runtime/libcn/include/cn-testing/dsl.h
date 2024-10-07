@@ -88,7 +88,7 @@
             if (convert_from_cn_bool(i_ty##_equality(i, min))) {                        \
                 break;                                                                  \
             }                                                                           \
-            i_ty##_sub(i, convert_to_##i_ty(1));                                        \
+            i = i_ty##_sub(i, convert_to_##i_ty(1));                                    \
         }                                                                               \
     }
 
