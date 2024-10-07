@@ -8,7 +8,11 @@ module BT = BaseTypes
 let debug_log_file : out_channel option ref = ref None
 
 let debug_log (str : string) : unit =
-  match !debug_log_file with Some oc -> output_string oc str | None -> ()
+  match !debug_log_file with
+  | Some oc ->
+    output_string oc str;
+    flush oc
+  | None -> ()
 
 
 let debug_stage (stage : string) (str : string) : unit =
