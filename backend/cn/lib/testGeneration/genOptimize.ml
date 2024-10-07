@@ -323,10 +323,6 @@ module Reordering = struct
             stmts
         in
         let res = res @ res' in
-        print_string "ghi";
-        print_newline ();
-        print_int (List.length res);
-        print_newline ();
         let var =
           SymGraph.fold_vertex
             (fun x var ->
@@ -351,21 +347,17 @@ module Reordering = struct
         in
         loop (vars, res, g, stmts))
     in
-    print_string "abc";
-    print_newline ();
     let g = get_variable_ordering iargs stmts in
-    print_string
-      (Pp.plain
-         (* Pp.debug
-            1
-            (lazy *)
-         (let buf = Buffer.create 50 in
-          Dot.fprint_graph (Format.formatter_of_buffer buf) g;
-          Pp.string (Buffer.contents buf))
-         (* ); *));
-    print_newline ();
-    print_string "def";
-    print_newline ();
+    (* print_string
+       (Pp.plain
+       (* Pp.debug
+       1
+       (lazy *)
+       (let buf = Buffer.create 50 in
+       Dot.fprint_graph (Format.formatter_of_buffer buf) g;
+       Pp.string (Buffer.contents buf))
+       (* ); *));
+       print_newline (); *)
     let _, res = loop (iargs, [], g, stmts) in
     res
 
@@ -393,8 +385,8 @@ module Reordering = struct
         | Map ((i_sym, i_bt, it_perm), gt_inner) ->
           GT.map_ ((i_sym, i_bt, it_perm), aux (SymSet.add i_sym iargs) gt_inner) loc
       in
-      print_string (Pp.plain (GT.pp gt));
-      print_newline ();
+      (* print_string (Pp.plain (GT.pp gt));
+         print_newline (); *)
       gt |> reorder iargs |> loop
     in
     let iargs = gd.iargs |> List.map fst |> SymSet.of_list in
