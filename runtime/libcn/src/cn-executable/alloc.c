@@ -65,6 +65,14 @@ void free_all(void) {
     curr = buf;
 }
 
+void *peek_alloc(void) {
+    return curr;
+}
+
+void free_until(void *next_alloc) {
+    curr = next_alloc;
+}
+
 // void *alloc_zeros(long nbytes) {
 //     void *res = alloc(nbytes);
 //     bzero(res, nbytes);

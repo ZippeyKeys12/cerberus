@@ -28,6 +28,10 @@ void *zalloc_(long nbytes, const char *, int);
 
 void free_all(void);
 
+void *peek_alloc(void);
+
+void free_until(void *next_alloc);
+
 // void *alloc_zeros(long nbytes);
 
 #ifdef __cplusplus
