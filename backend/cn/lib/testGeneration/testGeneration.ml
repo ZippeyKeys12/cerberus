@@ -1,5 +1,3 @@
-module GR = GenRuntime
-
 let run
   ~output_dir
   ~filename

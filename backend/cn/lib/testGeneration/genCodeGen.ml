@@ -16,10 +16,7 @@ let mk_stmt = Utils.mk_stmt
 
 let bt_to_ctype (pred_sym : Sym.t) (bt : BT.t) : C.ctype =
   let pred_sym = Some pred_sym in
-  if BT.equal BT.Unit bt then
-    C.(mk_ctype_pointer no_qualifiers void)
-  else
-    CtA.bt_to_ail_ctype ~pred_sym bt
+  CtA.bt_to_ail_ctype ~pred_sym bt
 
 
 let name_of_bt (pred_sym : Sym.t) (bt : BT.t) : string =
@@ -338,7 +335,8 @@ let compile_gen_def
   let decl : A.declaration =
     A.Decl_function
       ( false,
-        (C.no_qualifiers, bt_to_ctype name bt_ret),
+        ( C.no_qualifiers,
+          C.(mk_ctype_pointer no_qualifiers (Ctype ([], Struct (fst struct_def)))) ),
         List.map (fun (_, bt) -> (C.no_qualifiers, bt_to_ctype name bt, false)) gr.iargs,
         false,
         false,
@@ -379,8 +377,6 @@ let compile (sigma : CF.GenTypes.genTypeCategory A.sigma) (ctx : GR.context) : P
     |> List.flatten
   in
   defs
-  |> List.filter (fun ((_name, def) : Sym.t * GR.definition) ->
-    not (List.is_empty def.oargs))
   |> List.iter (fun ((name, def) : Sym.t * GR.definition) ->
     let bt =
       BT.Record (List.map (fun (x, bt) -> (Id.id (Sym.pp_string x), bt)) def.oargs)

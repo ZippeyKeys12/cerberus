@@ -1,6 +1,7 @@
 module CF = Cerb_frontend
 module A = CF.AilSyntax
 module C = CF.Ctype
+module AT = ArgumentTypes
 module CtA = Cn_internal_to_ail
 module Utils = Executable_spec_utils
 module BT = BaseTypes
@@ -118,7 +119,10 @@ let compile_tests
                  (comma ^^ space)
                  [ string suite;
                    Sym.pp inst.fn;
-                   Pp.int 100;
+                   (if AT.count_computational (Option.get inst.internal) = 0 then
+                      Pp.int 1
+                    else
+                      Pp.int 100);
                    separate_map
                      (comma ^^ space)
                      convert_from
@@ -182,8 +186,7 @@ let generate
       Option.is_some inst.internal)
     |> List.filter (fun (inst : Core_to_mucore.instrumentation) ->
       match List.assoc Sym.equal inst.fn sigma.declarations with
-      | _, _, A.Decl_function (_, _, _, _, true, _) ->
-        false (* exclude `inline` functions*)
+      | _, _, A.Decl_function (_, _, _, _, inline, _) -> not inline
       | _ -> true)
   in
   if List.is_empty insts then failwith "No testable functions";
