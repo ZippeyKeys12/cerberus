@@ -154,54 +154,88 @@ end
 (** This pass breaks down constraints, so that
     other passes can optimize more *)
 module SplitConstraints = struct
-  let name = "split_constraints"
+  module Conjunction = struct
+    let name = "split_conjunction"
 
-  let rec cnf_ (e : BT.t IT.term) : BT.t IT.term =
-    match e with
-    (* Double negation elimination *)
-    | Unop (Not, IT (Unop (Not, IT (e, _, _)), _, _)) -> e
-    (* Flip inequalities *)
-    | Unop (Not, IT (Binop (LT, e1, e2), _, _)) -> Binop (LE, e2, e1)
-    | Unop (Not, IT (Binop (LE, e1, e2), _, _)) -> Binop (LT, e2, e1)
-    (* De Morgan's Law *)
-    | Unop (Not, IT (Binop (And, e1, e2), info, loc)) ->
-      Binop (Or, IT (Unop (Not, cnf e1), info, loc), IT (Unop (Not, cnf e2), info, loc))
-    | Unop (Not, IT (Binop (Or, e1, e2), info, loc)) ->
-      Binop (And, IT (Unop (Not, cnf e1), info, loc), IT (Unop (Not, cnf e2), info, loc))
-    (* Distribute disjunction *)
-    | Binop (Or, e1, IT (Binop (And, e2, e3), info, loc))
-    | Binop (Or, IT (Binop (And, e2, e3), info, loc), e1) ->
-      Binop (And, IT (Binop (Or, e1, e2), info, loc), IT (Binop (Or, e1, e3), info, loc))
-    | _ -> e
-
-
-  and cnf (e : IT.t) : IT.t =
-    let (IT (e, info, loc)) = e in
-    IT (cnf_ e, info, loc)
+    let rec cnf_ (e : BT.t IT.term) : BT.t IT.term =
+      match e with
+      (* Double negation elimination *)
+      | Unop (Not, IT (Unop (Not, IT (e, _, _)), _, _)) -> e
+      (* Flip inequalities *)
+      | Unop (Not, IT (Binop (LT, e1, e2), _, _)) -> Binop (LE, e2, e1)
+      | Unop (Not, IT (Binop (LE, e1, e2), _, _)) -> Binop (LT, e2, e1)
+      (* De Morgan's Law *)
+      | Unop (Not, IT (Binop (And, e1, e2), info, loc)) ->
+        Binop (Or, IT (Unop (Not, cnf e1), info, loc), IT (Unop (Not, cnf e2), info, loc))
+      | Unop (Not, IT (Binop (Or, e1, e2), info, loc)) ->
+        Binop (And, IT (Unop (Not, cnf e1), info, loc), IT (Unop (Not, cnf e2), info, loc))
+      (* Distribute disjunction *)
+      | Binop (Or, e1, IT (Binop (And, e2, e3), info, loc))
+      | Binop (Or, IT (Binop (And, e2, e3), info, loc), e1) ->
+        Binop (And, IT (Binop (Or, e1, e2), info, loc), IT (Binop (Or, e1, e3), info, loc))
+      | _ -> e
 
 
-  let listify_constraints (it : IT.t) : IT.t list =
-    let rec loop (c : IT.t) : IT.t list =
-      match c with IT (Binop (And, e1, e2), _, _) -> loop e1 @ loop e2 | _ -> [ c ]
-    in
-    loop it
+    and cnf (e : IT.t) : IT.t =
+      let (IT (e, info, loc)) = e in
+      IT (cnf_ e, info, loc)
 
 
-  let transform (gt : GT.t) : GT.t =
-    let aux (gt : GT.t) : GT.t =
-      let (GT (gt_, _bt, loc)) = gt in
-      match gt_ with
-      | Assert (T it, gt') ->
-        it
-        |> cnf
-        |> listify_constraints
-        |> List.fold_left (fun gt_rest it' -> GT.assert_ (LC.T it', gt_rest) loc) gt'
-      | _ -> gt
-    in
-    GT.map_gen_pre aux gt
+    let listify_constraints (it : IT.t) : IT.t list =
+      let rec loop (c : IT.t) : IT.t list =
+        match c with IT (Binop (And, e1, e2), _, _) -> loop e1 @ loop e2 | _ -> [ c ]
+      in
+      loop it
 
 
-  let pass = { name; transform }
+    let transform (gt : GT.t) : GT.t =
+      let aux (gt : GT.t) : GT.t =
+        let (GT (gt_, _bt, loc)) = gt in
+        match gt_ with
+        | Assert (T it, gt') ->
+          it
+          |> cnf
+          |> listify_constraints
+          |> List.fold_left (fun gt_rest it' -> GT.assert_ (LC.T it', gt_rest) loc) gt'
+        | _ -> gt
+      in
+      GT.map_gen_pre aux gt
+
+
+    let pass = { name; transform }
+  end
+
+  module Let = struct
+    let name = "split_let"
+
+    let transform (gt : GT.t) : GT.t =
+      let aux (gt : GT.t) : GT.t =
+        let (GT (gt_, _bt, loc)) = gt in
+        match gt_ with
+        | Assert (T (IT (Let ((x, it_inner), it_rest), _, loc_let)), gt') ->
+          GT.let_
+            ( 0,
+              (x, GT.return_ it_inner (IT.loc it_inner)),
+              GT.assert_ (LC.T it_rest, gt') loc )
+            loc_let
+        (* TODO: Pull out lets that don't refer to `i_sym` *)
+        (* | Assert
+           (Forall ((i_sym, i_bt), IT (Let ((x, it_inner), it_rest), _, loc_let)), gt')
+           ->
+           GT.let_
+           ( 0,
+           (x, GT.return_ it_inner (IT.loc it_inner)),
+           GT.assert_ (LC.T it_rest, gt') loc )
+           loc_let *)
+        | _ -> gt
+      in
+      GT.map_gen_pre aux gt
+
+
+    let pass = { name; transform }
+  end
+
+  let passes = [ Conjunction.pass; Let.pass ]
 end
 
 (** This pass looks at the relationships of the
@@ -588,7 +622,8 @@ end
 let all_passes (prog5 : unit Mucore.mu_file) =
   Inline.passes
   @ RemoveUnused.passes
-  @ [ TermSimplification.pass prog5; SplitConstraints.pass ]
+  @ [ TermSimplification.pass prog5 ]
+  @ SplitConstraints.passes
 
 
 let optimize_gen (prog5 : unit Mucore.mu_file) (passes : StringSet.t) (gt : GT.t) : GT.t =
