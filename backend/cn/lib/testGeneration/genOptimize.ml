@@ -451,7 +451,7 @@ end
 module Specialization = struct end
 
 (** This pass ... *)
-(* module InferAllocationSize = struct
+module InferAllocationSize = struct
   let name = "infer_alloc_size"
 
   let infer_size_it (x : Sym.t) (it : IT.t) : IT.t option =
@@ -466,27 +466,77 @@ module Specialization = struct end
     | _ -> None
 
 
-  let rec infer_size (x : Sym.t) (gt : GT.t) : IT.t option =
-    let (GT (gt_, _, _)) = gt in
-    let here = Locations.other __LOC__ in
-    match gt_ with
-    | Arbitrary | Uniform _ | Alloc _ | Call _ -> None
-    | Pick wgts ->
-      wgts
-      |> List.map snd
-      |> List.map (infer_size x)
-      |> List.fold_left
-           (fun oa ob ->
-             match (oa, ob) with
-             | Some a, Some b -> Some (IT.max_ (a, b) here)
-             | Some a, _ | _, Some a -> Some a
-             | None, None -> None)
-           None
-    | Let (_, x, gt_inner, gt') ->
-      
+  let infer_size (x : Sym.t) (gt : GT.t) : IT.t option =
+    let merge loc oa ob =
+      match (oa, ob) with
+      | Some a, Some b -> Some (IT.max_ (a, b) loc)
+      | Some a, _ | _, Some a -> Some a
+      | None, None -> None
+    in
+    let rec aux (gt : GT.t) : IT.t option =
+      let (GT (gt_, _, _)) = gt in
+      match gt_ with
+      | Arbitrary | Uniform _ | Alloc _ | Call _ | Return _ -> None
+      | Pick wgts ->
+        wgts
+        |> List.map snd
+        |> List.map aux
+        |> List.fold_left (merge (Locations.other __LOC__)) None
+      | Asgn ((it_addr, sct), _it_val, gt') ->
+        let pointer_sym, it_size =
+          let (IT (it_addr_, _, loc)) = it_addr in
+          let psym, it_offset =
+            match it_addr_ with
+            | ArrayShift { base = IT (Sym p_sym, _, _); ct; index = it_offset } ->
+              ( p_sym,
+                IT.mul_ (IT.sizeOf_ ct loc, IT.cast_ Memory.size_bt it_offset loc) loc )
+            | Binop (Add, IT (Sym p_sym, _, _), it_offset) -> (p_sym, it_offset)
+            | Sym p_sym -> (p_sym, IT.num_lit_ Z.zero Memory.size_bt loc)
+            | _ ->
+              failwith
+                ("unsupported format for address: "
+                 ^ CF.Pp_utils.to_plain_string (IT.pp it_addr))
+          in
+          (psym, IT.add_ (it_offset, IT.sizeOf_ sct loc) loc)
+        in
+        if Sym.equal x pointer_sym then
+          (merge (Locations.other __LOC__)) (Some it_size) (aux gt')
+        else
+          aux gt'
+      | Let (_, (y, gt_inner), gt') ->
+        let oit = aux gt_inner in
+        let gt' = if Sym.equal x y then snd (GT.alpha_rename_gen x gt') else gt' in
+        (merge (Locations.other __LOC__)) oit (aux gt')
+      | Assert (_, gt') -> aux gt'
+      | ITE (_it_if, gt_then, gt_else) ->
+        (merge (Locations.other __LOC__)) (aux gt_then) (aux gt_else)
+      | Map ((i_sym, _i_bt, _it_perm), gt_inner) ->
+        let gt_inner =
+          if Sym.equal x i_sym then snd (GT.alpha_rename_gen x gt_inner) else gt_inner
+        in
+        aux gt_inner
+    in
+    aux gt
 
-  let transform (gt : GT.t) : GT.t = failwith __LOC__
-end *)
+
+  let transform (gt : GT.t) : GT.t =
+    let aux (gt : GT.t) : GT.t =
+      let (GT (gt_, _bt, loc_let)) = gt in
+      match gt_ with
+      | Let (backtracks, (x, GT (Alloc it_size, _bt, loc_alloc)), gt_rest) ->
+        (match infer_size x gt_rest with
+         | Some it_size' ->
+           let loc = Locations.other __LOC__ in
+           GT.let_
+             ( backtracks,
+               (x, GT.alloc_ (IT.max_ (it_size, it_size') loc) loc_alloc),
+               gt_rest )
+             loc_let
+         | None -> gt)
+      | _ -> gt
+    in
+    GT.map_gen_pre aux gt
+end
 
 (** This pass ... *)
 module LazyPruning = struct end
@@ -575,15 +625,15 @@ let optimize_gen (prog5 : unit Mucore.mu_file) (passes : StringSet.t) (gt : GT.t
       if StringSet.mem name passes then Some transform else None)
   in
   let opt (gt : GT.t) : GT.t = List.fold_left (fun gt pass -> pass gt) gt passes in
-  let rec aux (gt : GT.t) (fuel : int) : GT.t =
+  let rec loop (fuel : int) (gt : GT.t) : GT.t =
     if fuel <= 0 then
       gt
     else (
       let old_gt = gt in
       let new_gt = opt gt in
-      if GT.equal old_gt new_gt then new_gt else aux new_gt (fuel - 1))
+      if GT.equal old_gt new_gt then new_gt else loop (fuel - 1) new_gt)
   in
-  aux gt 5
+  gt |> loop 5 |> InferAllocationSize.transform
 
 
 let optimize_gen_def
