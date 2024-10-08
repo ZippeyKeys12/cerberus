@@ -5,7 +5,7 @@ module GT = GenTerms
 module GD = GenDefinitions
 module SymMap = Map.Make (Sym)
 
-let arbitrary_of_sctype (sct : Sctypes.t) loc : GT.t =
+let rec arbitrary_of_sctype (sct : Sctypes.t) loc : GT.t =
   match sct with
   | Sctypes.Array (ct', Some len) ->
     let sym = Sym.fresh () in
@@ -17,7 +17,7 @@ let arbitrary_of_sctype (sct : Sctypes.t) loc : GT.t =
             ( IT.le_ (IT.num_lit_ Z.zero bt loc, IT.sym_ (sym, bt, loc)) loc,
               IT.lt_ (IT.sym_ (sym, bt, loc), IT.num_lit_ (Z.of_int len) bt loc) loc )
             loc ),
-        GT.arbitrary_ (Memory.bt_of_sct ct') loc )
+        arbitrary_of_sctype ct' loc )
       loc
   | Array (_, None) -> failwith __LOC__
   | _ -> GT.arbitrary_ (Memory.bt_of_sct sct) loc
@@ -113,48 +113,81 @@ let replace_struct_memberof_gt
 let destruct_struct_arbitrary (prog5 : unit Mucore.mu_file) (gt : GT.t) : GT.t =
   let aux (gt : GT.t) : GT.t =
     match gt with
+    (* This case is for when nested in a `map` due to needing an arbitrary array*)
+    | GT (Arbitrary, Struct tag, loc_arb) ->
+      (* Generate fresh vars for each member *)
+      let members =
+        match Pmap.find tag prog5.mu_tagDefs with
+        | M_StructDef pieces ->
+          pieces
+          |> List.filter_map (fun ({ member_or_padding; _ } : Memory.struct_piece) ->
+            member_or_padding)
+          |> List.map (fun (member, ct) -> (Sym.fresh (), (member, ct)))
+        | _ -> failwith ("no struct " ^ Sym.pp_string tag ^ " found")
+      in
+      (* Assemble final struct *)
+      let gt_struct =
+        GT.return_
+          (IT.struct_
+             ( tag,
+               List.map
+                 (fun (y, (member, ct)) ->
+                   (member, IT.sym_ (y, Memory.bt_of_sct ct, loc_arb)))
+                 members )
+             loc_arb)
+          loc_arb
+      in
+      (* Generate appropriate generators for the members *)
+      List.fold_left
+        (fun gt'' (y, (_, sct)) ->
+          let gt_arb = arbitrary_of_sctype sct loc_arb in
+          (* NOTE: By construction, this should only be inside maps, so it'll never get backtracked to *)
+          GT.let_ (0, (y, gt_arb), gt'') loc_arb)
+        gt_struct
+        members
     | GT (Let (backtracks, (x, GT (Arbitrary, Struct tag, loc_arb)), gt'), _, _) ->
-      (match Pmap.find tag prog5.mu_tagDefs with
-       | M_StructDef pieces ->
-         (* Generate fresh vars for each member *)
-         let members =
-           pieces
-           |> List.filter_map (fun ({ member_or_padding; _ } : Memory.struct_piece) ->
-             member_or_padding)
-           |> List.map (fun (member, ct) -> (Sym.fresh (), (member, ct)))
-         in
-         (* Replace references to the members *)
-         let gt' =
-           replace_struct_memberof_gt
-             x
-             (List.map (fun (sym, (member, _)) -> (member, sym)) members)
-             gt'
-         in
-         (* Assemble final struct *)
-         let gt_struct =
-           GT.let_
-             ( backtracks,
-               ( x,
-                 GT.return_
-                   (IT.struct_
-                      ( tag,
-                        List.map
-                          (fun (y, (member, ct)) ->
-                            (member, IT.sym_ (y, Memory.bt_of_sct ct, loc_arb)))
-                          members )
-                      loc_arb)
-                   loc_arb ),
-               gt' )
-             loc_arb
-         in
-         (* Generate appropriate generators for the members *)
-         List.fold_left
-           (fun gt'' (y, (_, sct)) ->
-             let gt_arb = arbitrary_of_sctype sct loc_arb in
-             GT.let_ (backtracks, (y, gt_arb), gt'') loc_arb)
-           gt_struct
-           members
-       | _ -> failwith ("no struct " ^ Sym.pp_string tag ^ " found"))
+      (* Generate fresh vars for each member *)
+      let members =
+        match Pmap.find tag prog5.mu_tagDefs with
+        | M_StructDef pieces ->
+          pieces
+          |> List.filter_map (fun ({ member_or_padding; _ } : Memory.struct_piece) ->
+            member_or_padding)
+          |> List.map (fun (member, ct) -> (Sym.fresh (), (member, ct)))
+        | _ -> failwith ("no struct " ^ Sym.pp_string tag ^ " found")
+      in
+      (* FIXME: Move this to optimization, since new structs can be introduced *)
+      (* Replace references to the members *)
+      let gt' =
+        replace_struct_memberof_gt
+          x
+          (List.map (fun (sym, (member, _)) -> (member, sym)) members)
+          gt'
+      in
+      (* Assemble final struct *)
+      let gt_struct =
+        GT.let_
+          ( backtracks,
+            ( x,
+              GT.return_
+                (IT.struct_
+                   ( tag,
+                     List.map
+                       (fun (y, (member, ct)) ->
+                         (member, IT.sym_ (y, Memory.bt_of_sct ct, loc_arb)))
+                       members )
+                   loc_arb)
+                loc_arb ),
+            gt' )
+          loc_arb
+      in
+      (* Generate appropriate generators for the members *)
+      List.fold_left
+        (fun gt'' (y, (_, sct)) ->
+          let gt_arb = arbitrary_of_sctype sct loc_arb in
+          GT.let_ (backtracks, (y, gt_arb), gt'') loc_arb)
+        gt_struct
+        members
     | _ -> gt
   in
   GT.map_gen_pre aux gt
