@@ -6,6 +6,7 @@ module LC = LogicalConstraints
 module GT = GenTerms
 module GD = GenDefinitions
 module GBT = GenBaseTypes
+module GA = GenAnalysis
 module SymSet = Set.Make (Sym)
 
 let bennet = Sym.fresh_named "bennet"
@@ -246,18 +247,7 @@ let rec elaborate_gt (inputs : SymSet.t) (vars : Sym.t list) (gt : GT.t) : term 
     in
     gt_lets (match vars with v :: _ -> v | [] -> bennet) (Call { fsym; iargs })
   | Asgn ((it_addr, sct), value, rest) ->
-    let pointer, offset =
-      let (IT (it_addr_, _, loc)) = it_addr in
-      match it_addr_ with
-      | ArrayShift { base = IT (Sym p_sym, _, _); ct; index = it_offset } ->
-        (p_sym, IT.mul_ (IT.sizeOf_ ct loc, IT.cast_ Memory.size_bt it_offset loc) loc)
-      | Binop (Add, IT (Sym p_sym, _, _), it_offset) -> (p_sym, it_offset)
-      | Sym p_sym -> (p_sym, IT.num_lit_ Z.zero Memory.size_bt loc)
-      | _ ->
-        failwith
-          ("unsupported format for address: "
-           ^ CF.Pp_utils.to_plain_string (IT.pp it_addr))
-    in
+    let pointer, offset = GA.get_addr_offset it_addr in
     if not (SymSet.mem pointer inputs || List.exists (Sym.equal pointer) vars) then
       failwith
         (Sym.pp_string pointer

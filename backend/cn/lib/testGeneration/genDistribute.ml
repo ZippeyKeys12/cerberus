@@ -3,6 +3,7 @@ module IT = IndexTerms
 module LC = LogicalConstraints
 module GT = GenTerms
 module GD = GenDefinitions
+module GA = GenAnalysis
 module SymMap = Map.Make (Sym)
 
 let array_max_length : int = 20
@@ -28,15 +29,6 @@ let allocations (gt : GT.t) : GT.t =
 
 
 let rec _implicit_contraints (gt : GT.t) : GT.t =
-  let infer_size_it (it : IT.t) : (Sym.t * IT.t) option =
-    let (IT (it_, _, loc)) = it in
-    match it_ with
-    | ArrayShift { base = IT (Sym p_sym, _, _); ct; index = it_offset } ->
-      Some (p_sym, IT.mul_ (IT.sizeOf_ ct loc, IT.cast_ Memory.size_bt it_offset loc) loc)
-    | Binop (Add, IT (Sym p_sym, _, _), it_offset) -> Some (p_sym, it_offset)
-    | Sym p_sym -> Some (p_sym, IT.num_lit_ Z.zero Memory.size_bt loc)
-    | _ -> None
-  in
   let names = ref SymMap.empty in
   let rec aux (gt : GT.t) : GT.t =
     let (GT (gt_, _, here)) = gt in
@@ -48,7 +40,7 @@ let rec _implicit_contraints (gt : GT.t) : GT.t =
       Option.value
         ~default:gt
         (let open Option in
-         let@ psym, it_offset = infer_size_it it_addr in
+         let@ psym, it_offset = GA.get_addr_offset_opt it_addr in
          let@ it_q = SymMap.find_opt psym !names in
          let loc = Locations.other __LOC__ in
          let it_size_of = IT.sizeOf_ sct loc in

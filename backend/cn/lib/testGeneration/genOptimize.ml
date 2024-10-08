@@ -297,18 +297,7 @@ module Reordering = struct
       match stmts with
       | Asgn ((it_addr, _sct), it_val) :: stmts' ->
         let g' = order_rest (g, stmts') in
-        let pointer_sym, it_offset =
-          let (IT (it_addr_, _, loc)) = it_addr in
-          match it_addr_ with
-          | ArrayShift { base = IT (Sym p_sym, _, _); ct; index = it_offset } ->
-            (p_sym, IT.mul_ (IT.sizeOf_ ct loc, IT.cast_ Memory.size_bt it_offset loc) loc)
-          | Binop (Add, IT (Sym p_sym, _, _), it_offset) -> (p_sym, it_offset)
-          | Sym p_sym -> (p_sym, IT.num_lit_ Z.zero Memory.size_bt loc)
-          | _ ->
-            failwith
-              ("unsupported format for address: "
-               ^ CF.Pp_utils.to_plain_string (IT.pp it_addr))
-        in
+        let pointer_sym, it_offset = GA.get_addr_offset it_addr in
         (* We prefer to have correct values and
            only backtrack on the allocation, so
            we want the address later *)
@@ -454,18 +443,6 @@ module Specialization = struct end
 module InferAllocationSize = struct
   let name = "infer_alloc_size"
 
-  let infer_size_it (x : Sym.t) (it : IT.t) : IT.t option =
-    let (IT (it_, _, loc)) = it in
-    match it_ with
-    | ArrayShift { base = IT (Sym p_sym, _, _); ct; index = it_offset }
-      when Sym.equal x p_sym ->
-      Some (IT.mul_ (IT.sizeOf_ ct loc, IT.cast_ Memory.size_bt it_offset loc) loc)
-    | Binop (Add, IT (Sym p_sym, _, _), it_offset) when Sym.equal x p_sym ->
-      Some it_offset
-    | Sym p_sym when Sym.equal x p_sym -> Some (IT.num_lit_ Z.zero Memory.size_bt loc)
-    | _ -> None
-
-
   let infer_size (x : Sym.t) (gt : GT.t) : IT.t option =
     let merge loc oa ob =
       match (oa, ob) with
@@ -484,19 +461,8 @@ module InferAllocationSize = struct
         |> List.fold_left (merge (Locations.other __LOC__)) None
       | Asgn ((it_addr, sct), _it_val, gt') ->
         let pointer_sym, it_size =
-          let (IT (it_addr_, _, loc)) = it_addr in
-          let psym, it_offset =
-            match it_addr_ with
-            | ArrayShift { base = IT (Sym p_sym, _, _); ct; index = it_offset } ->
-              ( p_sym,
-                IT.mul_ (IT.sizeOf_ ct loc, IT.cast_ Memory.size_bt it_offset loc) loc )
-            | Binop (Add, IT (Sym p_sym, _, _), it_offset) -> (p_sym, it_offset)
-            | Sym p_sym -> (p_sym, IT.num_lit_ Z.zero Memory.size_bt loc)
-            | _ ->
-              failwith
-                ("unsupported format for address: "
-                 ^ CF.Pp_utils.to_plain_string (IT.pp it_addr))
-          in
+          let (IT (_, _, loc)) = it_addr in
+          let psym, it_offset = GA.get_addr_offset it_addr in
           (psym, IT.add_ (it_offset, IT.sizeOf_ sct loc) loc)
         in
         if Sym.equal x pointer_sym then

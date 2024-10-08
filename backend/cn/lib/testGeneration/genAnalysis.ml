@@ -1,3 +1,4 @@
+module CF = Cerb_frontend
 module BT = BaseTypes
 module IT = IndexTerms
 module LC = LogicalConstraints
@@ -146,3 +147,20 @@ module Bounds = struct
 end
 
 let get_bounds = Bounds.get_bounds
+
+let get_addr_offset_opt (it : IT.t) : (Sym.t * IT.t) option =
+  let (IT (it_, _, loc)) = it in
+  match it_ with
+  | ArrayShift { base = IT (Sym p_sym, _, _); ct; index = it_offset } ->
+    Some (p_sym, IT.mul_ (IT.sizeOf_ ct loc, IT.cast_ Memory.size_bt it_offset loc) loc)
+  | Binop (Add, IT (Sym p_sym, _, _), it_offset) ->
+    Some (p_sym, IT.cast_ Memory.size_bt it_offset loc)
+  | Sym p_sym -> Some (p_sym, IT.num_lit_ Z.zero Memory.size_bt loc)
+  | _ -> None
+
+
+let get_addr_offset (it : IT.t) : Sym.t * IT.t =
+  match get_addr_offset_opt it with
+  | Some r -> r
+  | None ->
+    failwith ("unsupported format for address: " ^ CF.Pp_utils.to_plain_string (IT.pp it))
