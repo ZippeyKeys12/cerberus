@@ -467,6 +467,13 @@ let generate_tests
     ~f:(fun ~prog5 ~ail_prog ~statement_locs ~paused:_ ->
       Cerb_colour.without_colour
         (fun () ->
+          if not (Sys.file_exists output_dir) then (
+            print_string ("Directory \"" ^ output_dir ^ "\" does not exist.");
+            print_newline ();
+            Sys.mkdir output_dir 0o777;
+            print_string
+              ("Created directory \"" ^ output_dir ^ "\" with full permissions.");
+            print_newline ());
           let _, sigma = ail_prog in
           Executable_spec.main
             ~with_ownership_checking
