@@ -80,10 +80,10 @@ function [rec] (datatype seq) seq_of_buf (map<i32,i32> buf, i32 inp, i32 outp, i
 
 struct queue
 {
-    int inp;
-    int outp;
-    int size;
-    int* buf;
+  int inp;
+  int outp;
+  int size;
+  int* buf;
 };
 
 /*@
@@ -121,32 +121,32 @@ int* malloc_buf(int size)
   ensures take rv = each (i32 i; 0i32 <= i && i < size) { Owned<int>(return + i) };
 @*/
 {
-    return cn_malloc(size * sizeof(int));
+  return cn_malloc(size * sizeof(int));
 }
 
-struct queue* malloc_queue(int n)
-    /*@
-      trusted;
-      requires true;
-      ensures take rv = Owned<struct queue>(return);
-    @*/
+struct queue* malloc_queue()
+  /*@
+    trusted;
+    requires true;
+    ensures take rv = Owned<struct queue>(return);
+  @*/
 {
-    return cn_malloc(sizeof(struct queue));
+  return cn_malloc(sizeof(struct queue));
 }
 
 
 struct queue* new(int n)
-    /*@ requires 0i32 < n;
-                 (i64) n + (i64) n + 2i64 < 2147483647i64;
-        ensures take queue_out = QueueAbs(return);
-                queue_out.size == n;
-                queue_out.content == Seq_Nil {};
-    @*/
+  /*@ requires 0i32 < n;
+               (i64) n + (i64) n + 2i64 < 2147483647i64;
+      ensures take queue_out = QueueAbs(return);
+              queue_out.size == n;
+              queue_out.content == Seq_Nil {};
+  @*/
 {
   int bufsize = n + 1;
   int* buff = malloc_buf(bufsize);
   struct queue q = {0, 0, bufsize, buff};
-  struct queue* qptr = malloc_queue(0);
+  struct queue* qptr = malloc_queue();
   *qptr = q;
   return qptr;
 }
@@ -159,9 +159,9 @@ void put(struct queue* q, int n)
             queue_out.size == queue.size;
 @*/
 {
-    /*@ extract Owned<int>, q->inp; @*/
-    q->buf[q->inp] = n;
-    q->inp = (q->inp + 1) % q->size;
+  /*@ extract Owned<int>, q->inp; @*/
+  q->buf[q->inp] = n;
+  q->inp = (q->inp + 1) % q->size;
 }
 
 int get(struct queue* q)
@@ -173,10 +173,10 @@ int get(struct queue* q)
             queue_out.size == queue.size;
 @*/
 {
-    /*@ extract Owned<int>, q->outp; @*/
-    int ans = q->buf[q->outp];
-    q->outp = (q->outp + 1) % q->size;
-    return ans;
+  /*@ extract Owned<int>, q->outp; @*/
+  int ans = q->buf[q->outp];
+  q->outp = (q->outp + 1) % q->size;
+  return ans;
 }
 
 int queueSize(struct queue* q)
@@ -186,6 +186,6 @@ int queueSize(struct queue* q)
             return == length(queue.content);
 @*/
 {
-    return (q->inp - q->outp + q->size) % q->size;
+  return (q->inp - q->outp + q->size) % q->size;
 }
 
