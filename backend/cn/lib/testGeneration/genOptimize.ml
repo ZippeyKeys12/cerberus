@@ -476,11 +476,17 @@ module InferAllocationSize = struct
       | Assert (_, gt') -> aux gt'
       | ITE (_it_if, gt_then, gt_else) ->
         (merge (Locations.other __LOC__)) (aux gt_then) (aux gt_else)
-      | Map ((i_sym, _i_bt, _it_perm), gt_inner) ->
-        let gt_inner =
-          if Sym.equal x i_sym then snd (GT.alpha_rename_gen x gt_inner) else gt_inner
+      | Map ((i_sym, i_bt, it_perm), gt_inner) ->
+        let j_sym, gt_inner =
+          if Sym.equal x i_sym then GT.alpha_rename_gen x gt_inner else (i_sym, gt_inner)
         in
-        aux gt_inner
+        let open Option in
+        let@ it = aux gt_inner in
+        if SymSet.mem j_sym (IT.free_vars it) then (
+          let _, it_max = GA.get_bounds (i_sym, i_bt) it_perm in
+          return (IT.subst (IT.make_subst [ (j_sym, it_max) ]) it))
+        else
+          return it
     in
     aux gt
 
