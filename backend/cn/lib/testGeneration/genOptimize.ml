@@ -460,15 +460,16 @@ module InferAllocationSize = struct
         |> List.map aux
         |> List.fold_left (merge (Locations.other __LOC__)) None
       | Asgn ((it_addr, sct), _it_val, gt') ->
-        let pointer_sym, it_size =
+        let oit_size =
           let (IT (_, _, loc)) = it_addr in
-          let psym, it_offset = GA.get_addr_offset it_addr in
-          (psym, IT.add_ (it_offset, IT.sizeOf_ sct loc) loc)
+          let open Option in
+          let@ psym, it_offset = GA.get_addr_offset_opt it_addr in
+          if Sym.equal x psym then
+            return (IT.add_ (it_offset, IT.sizeOf_ sct loc) loc)
+          else
+            None
         in
-        if Sym.equal x pointer_sym then
-          (merge (Locations.other __LOC__)) (Some it_size) (aux gt')
-        else
-          aux gt'
+        (merge (Locations.other __LOC__)) oit_size (aux gt')
       | Let (_, (y, gt_inner), gt') ->
         let oit = aux gt_inner in
         let gt' = if Sym.equal x y then snd (GT.alpha_rename_gen x gt') else gt' in

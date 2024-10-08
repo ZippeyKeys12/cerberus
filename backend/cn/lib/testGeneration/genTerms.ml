@@ -327,7 +327,8 @@ let rec map_gen_pre (f : t -> t) (g : t) : t =
     | Pick wgts -> Pick (List.map_snd (map_gen_pre f) wgts)
     | Alloc it -> Alloc it
     | Call (fsym, its) -> Call (fsym, its)
-    | Asgn ((it_addr, gt), it_val, gt') -> Asgn ((it_addr, gt), it_val, map_gen_pre f gt')
+    | Asgn ((it_addr, sct), it_val, gt') ->
+      Asgn ((it_addr, sct), it_val, map_gen_pre f gt')
     | Let (tries, (x, gt), gt') -> Let (tries, (x, map_gen_pre f gt), map_gen_pre f gt')
     | Return it -> Return it
     | Assert (lcs, gt') -> Assert (lcs, map_gen_pre f gt')
@@ -346,7 +347,8 @@ let rec map_gen_post (f : t -> t) (g : t) : t =
     | Pick wgts -> Pick (List.map_snd (map_gen_post f) wgts)
     | Alloc it -> Alloc it
     | Call (fsym, its) -> Call (fsym, its)
-    | Asgn ((it_addr, gt), it_val, gt') -> Asgn ((it_addr, gt), it_val, map_gen_post f gt')
+    | Asgn ((it_addr, sct), it_val, gt') ->
+      Asgn ((it_addr, sct), it_val, map_gen_post f gt')
     | Let (tries, (x, gt), gt') -> Let (tries, (x, map_gen_post f gt), map_gen_post f gt')
     | Return it -> Return it
     | Assert (lcs, gt') -> Assert (lcs, map_gen_post f gt')
